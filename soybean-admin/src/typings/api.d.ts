@@ -115,6 +115,12 @@ declare namespace Api {
 
     type ServerConnectivity = Record<'idServer' | 'relayServer' | 'apiServer' | 'key', ServerConnectivityItem>;
 
+    interface AccessPolicy {
+      registrationMode: 'admin_only' | 'company_email' | 'oauth_only' | 'invite_only';
+      allowedEmailDomains: string[];
+      allowOAuthAutoCreate: boolean;
+    }
+
     interface LineChart {
       xAxis: string[];
       users: number[];
@@ -159,6 +165,23 @@ declare namespace Api {
     type SessionSearchParams = CommonType.RecordNullable<
       Pick<Api.UserManagement.Session, 'username' | 'created_at'> & Api.Common.CommonSearchParams
     >;
+
+    type UserGroup = Common.CommonRecord<{
+      guid: string;
+      name: string;
+      owner_id: number;
+      member_count: number;
+      updated_at?: string;
+    }>;
+    type UserGroupList = Common.PaginatingQueryRecord<UserGroup>;
+
+    type UserGroupMember = Common.CommonRecord<{
+      username: string;
+      name: string;
+      email: string;
+      status: number;
+      is_admin: boolean;
+    }>;
   }
 
   namespace Devices {

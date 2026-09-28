@@ -34,3 +34,11 @@ export function fetchLoginCaptchaConfig() {
 export function fetchSaveLoginCaptchaConfig(enabled: boolean) {
   return request<{ enabled: boolean }>({ url: '/dashboard/login/captcha/config', method: 'post', data: { enabled } });
 }
+
+export function fetchAccessPolicy() {
+  return request<Api.Home.AccessPolicy>({ url: '/dashboard/access/policy' });
+}
+
+export function fetchSaveAccessPolicy(data: Api.Home.AccessPolicy) {
+  return request<Api.Home.AccessPolicy>({ url: '/dashboard/access/policy', method: 'post', data });
+}

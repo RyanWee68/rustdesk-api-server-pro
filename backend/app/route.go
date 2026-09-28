@@ -47,6 +47,7 @@ func SetRoute(app *iris.Application) {
 	{
 		adminWithAuthMvc := mvc.New(adminWithAuthParty)
 		adminWithAuthMvc.Handle(new(admin.UsersController))
+		adminWithAuthMvc.Handle(new(admin.UserGroupsController))
 		adminWithAuthMvc.Handle(new(admin.SessionsController))
 		adminWithAuthMvc.Handle(new(admin.AddressBookController))
 		adminWithAuthMvc.Handle(new(admin.MailTemplateController))

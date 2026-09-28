@@ -35,3 +35,23 @@ export function fetchSessionClear() {
 export function fetchSecurityAuditClear() {
   return request<any>({ url: '/security-audit/clear', method: 'delete' });
 }
+
+export function fetchUserGroupList(params: any) {
+  return request<Api.UserManagement.UserGroupList>({ url: '/user-groups/list', params });
+}
+
+export function saveUserGroup(data: { guid?: string; name: string }) {
+  return request({ url: '/user-groups/save', method: 'post', data });
+}
+
+export function deleteUserGroup(guid: string) {
+  return request({ url: '/user-groups/delete', method: 'delete', params: { guid } });
+}
+
+export function fetchUserGroupMembers(guid: string) {
+  return request<{ records: Api.UserManagement.UserGroupMember[] }>({ url: '/user-groups/members', params: { guid } });
+}
+
+export function saveUserGroupMembers(data: { guid: string; userIds: number[] }) {
+  return request({ url: '/user-groups/members', method: 'post', data });
+}

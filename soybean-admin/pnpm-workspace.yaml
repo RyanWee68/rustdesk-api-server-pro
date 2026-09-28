@@ -1,2 +1,7 @@
 packages:
   - "packages/*"
+allowBuilds:
+  es5-ext: true
+  esbuild: true
+  simple-git-hooks: true
+  vue-demi: true

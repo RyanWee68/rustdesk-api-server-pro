@@ -249,6 +249,17 @@ export const generatedRoutes: GeneratedRoute[] = [
     },
     children: [
       {
+        name: 'system_access-policy',
+        path: '/system/access-policy',
+        component: 'view.system_access-policy',
+        meta: {
+          title: 'system_access-policy',
+          i18nKey: 'route.system_access-policy',
+          icon: 'mdi:account-lock',
+          roles: ['R_SUPER']
+        }
+      },
+      {
         name: 'system_mail',
         path: '/system/mail',
         meta: {
@@ -327,6 +338,18 @@ export const generatedRoutes: GeneratedRoute[] = [
       order: 2
     },
     children: [
+      {
+        name: 'user_groups',
+        path: '/user/groups',
+        component: 'view.user_groups',
+        meta: {
+          title: 'user_groups',
+          i18nKey: 'route.user_groups',
+          requiresAuth: true,
+          icon: 'mdi:account-group',
+          roles: ['R_SUPER']
+        }
+      },
       {
         name: 'user_list',
         path: '/user/list',

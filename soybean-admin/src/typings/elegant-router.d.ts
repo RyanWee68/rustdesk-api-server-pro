@@ -38,6 +38,7 @@ declare module "@elegant-router/types" {
     "my-devices_peers": "/my-devices/peers";
     "my-devices_tags": "/my-devices/tags";
     "system": "/system";
+    "system_access-policy": "/system/access-policy";
     "system_mail": "/system/mail";
     "system_mail_logs": "/system/mail/logs";
     "system_mail_template": "/system/mail/template";
@@ -45,6 +46,7 @@ declare module "@elegant-router/types" {
     "system_server": "/system/server";
     "system_tokens": "/system/tokens";
     "user": "/user";
+    "user_groups": "/user/groups";
     "user_list": "/user/list";
     "user_profile": "/user/profile";
     "user_sessions": "/user/sessions";
@@ -131,11 +133,13 @@ declare module "@elegant-router/types" {
     | "my-devices_manage"
     | "my-devices_peers"
     | "my-devices_tags"
+    | "system_access-policy"
     | "system_mail_logs"
     | "system_mail_template"
     | "system_oauth"
     | "system_server"
     | "system_tokens"
+    | "user_groups"
     | "user_list"
     | "user_profile"
     | "user_sessions"

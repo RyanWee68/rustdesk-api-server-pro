@@ -913,6 +913,12 @@ func (s *OAuthProviderService) matchOrCreateOAuthUser(provider config.OAuthProvi
 	if !provider.AutoCreateUser {
 		return nil, errcode.New(errcode.ERR2023.Code, errcode.ERR2023.Message)
 	}
+	if !s.accessPolicyAllowsOAuthAutoCreate() {
+		return nil, errcode.New(errcode.ERR2023.Code, errcode.ERR2023.Message)
+	}
+	if !s.accessPolicyAllowsEmail(claims.Email) {
+		return nil, errcode.New(errcode.ERR2017.Code, errcode.ERR2017.Message)
+	}
 
 	nameSeed := claims.Login
 	if nameSeed == "" {
@@ -956,6 +962,35 @@ func (s *OAuthProviderService) matchOrCreateOAuthUser(provider config.OAuthProvi
 	}
 
 	return user, nil
+}
+
+func (s *OAuthProviderService) accessPolicyAllowsOAuthAutoCreate() bool {
+	if s == nil || s.cfg == nil || s.cfg.AccessPolicy == nil {
+		return true
+	}
+	mode := strings.TrimSpace(s.cfg.AccessPolicy.RegistrationMode)
+	return s.cfg.AccessPolicy.AllowOAuthAutoCreate && (mode == "company_email" || mode == "oauth_only")
+}
+
+func (s *OAuthProviderService) accessPolicyAllowsEmail(email string) bool {
+	if s == nil || s.cfg == nil || s.cfg.AccessPolicy == nil {
+		return true
+	}
+	mode := strings.TrimSpace(s.cfg.AccessPolicy.RegistrationMode)
+	if len(s.cfg.AccessPolicy.AllowedEmailDomains) == 0 {
+		return mode != "company_email"
+	}
+	i := strings.LastIndex(email, "@")
+	if i <= 0 {
+		return false
+	}
+	domain := strings.ToLower(strings.TrimSpace(email[i+1:]))
+	for _, allowed := range s.cfg.AccessPolicy.AllowedEmailDomains {
+		if strings.ToLower(strings.TrimSpace(allowed)) == domain {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *OAuthProviderService) makeUniqueUsername(base string) (string, error) {

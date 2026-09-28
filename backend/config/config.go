@@ -29,6 +29,13 @@ type ServerConfig struct {
 	OAuth               *OAuthConfig          `yaml:"oauth"`
 	WebAuthn            *WebAuthnConfig       `yaml:"webauthn"`
 	RustdeskServer      *RustdeskServerConfig `yaml:"rustdeskServer"`
+	AccessPolicy        *AccessPolicyConfig   `yaml:"accessPolicy"`
+}
+
+type AccessPolicyConfig struct {
+	RegistrationMode     string   `yaml:"registrationMode"`
+	AllowedEmailDomains  []string `yaml:"allowedEmailDomains"`
+	AllowOAuthAutoCreate bool     `yaml:"allowOAuthAutoCreate"`
 }
 
 type WebAuthnConfig struct {
@@ -185,6 +192,11 @@ func GetDefaultServerConfig() *ServerConfig {
 		WebAuthn: &WebAuthnConfig{
 			Enabled: true,
 			RPName:  "RustDesk API Server Pro",
+		},
+		AccessPolicy: &AccessPolicyConfig{
+			RegistrationMode:     "admin_only",
+			AllowedEmailDomains:  []string{},
+			AllowOAuthAutoCreate: false,
 		},
 	}
 }

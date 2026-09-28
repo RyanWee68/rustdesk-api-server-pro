@@ -57,6 +57,12 @@ func (service *UserService) Login(loginForm api.LoginForm) iris.Map {
 		}
 	}
 
+	if user.Status <= 0 {
+		return iris.Map{
+			"error": errcode.New(errcode.ERR1012.Code, errcode.ERR1012.Message).Error(),
+		}
+	}
+
 	// 如果是email_check，则发送验证邮件
 	if user.LoginVerify == model.LOGIN_EMAIL_CHECK {
 		if user.Email == "" {

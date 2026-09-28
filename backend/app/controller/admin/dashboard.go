@@ -30,6 +30,12 @@ type saveLoginCaptchaConfigRequest struct {
 	Enabled bool `json:"enabled"`
 }
 
+type accessPolicyRequest struct {
+	RegistrationMode     string   `json:"registrationMode"`
+	AllowedEmailDomains  []string `json:"allowedEmailDomains"`
+	AllowOAuthAutoCreate bool     `json:"allowOAuthAutoCreate"`
+}
+
 // GetDashboardLoginCaptchaConfig 返回登录验证码配置。
 func (c *DashboardController) GetDashboardLoginCaptchaConfig() mvc.Result {
 	return c.Success(iris.Map{"enabled": !c.Cfg.DisableLoginCaptcha}, "ok")
@@ -50,6 +56,81 @@ func (c *DashboardController) PostDashboardLoginCaptchaConfig() mvc.Result {
 		return c.Error(nil, errcode.New(errcode.ERRA007.Code, errcode.ERRA007.Message).Error())
 	}
 	return c.Success(iris.Map{"enabled": req.Enabled}, "ok")
+}
+
+// GetDashboardAccessPolicy 返回公司账号准入策略。
+func (c *DashboardController) GetDashboardAccessPolicy() mvc.Result {
+	cfg := c.Cfg
+	if cfg == nil {
+		cfg = config.GetServerConfig()
+		c.Cfg = cfg
+	}
+	if cfg.AccessPolicy == nil {
+		cfg.AccessPolicy = &config.AccessPolicyConfig{RegistrationMode: "admin_only"}
+	}
+	return c.Success(iris.Map{
+		"registrationMode":     normalizeRegistrationMode(cfg.AccessPolicy.RegistrationMode),
+		"allowedEmailDomains":  cfg.AccessPolicy.AllowedEmailDomains,
+		"allowOAuthAutoCreate": cfg.AccessPolicy.AllowOAuthAutoCreate,
+	}, "ok")
+}
+
+// PostDashboardAccessPolicy 保存公司账号准入策略。
+func (c *DashboardController) PostDashboardAccessPolicy() mvc.Result {
+	user := c.GetUser()
+	if user == nil || !user.IsAdmin {
+		return c.Error(nil, errcode.New(errcode.ERR1010.Code, errcode.ERR1010.Message).Error())
+	}
+	var req accessPolicyRequest
+	if err := c.Ctx.ReadJSON(&req); err != nil {
+		return c.Error(nil, errcode.New(errcode.ERRA006.Code, errcode.ERRA006.Message).Error())
+	}
+
+	cfg := c.Cfg
+	if cfg == nil {
+		cfg = config.GetServerConfig()
+		c.Cfg = cfg
+	}
+	cfg.AccessPolicy = &config.AccessPolicyConfig{
+		RegistrationMode:     normalizeRegistrationMode(req.RegistrationMode),
+		AllowedEmailDomains:  cleanAccessPolicyDomains(req.AllowedEmailDomains),
+		AllowOAuthAutoCreate: req.AllowOAuthAutoCreate,
+	}
+	if err := config.SaveServerConfig(cfg); err != nil {
+		return c.Error(nil, errcode.New(errcode.ERRA007.Code, errcode.ERRA007.Message).Error())
+	}
+	return c.Success(iris.Map{
+		"registrationMode":     cfg.AccessPolicy.RegistrationMode,
+		"allowedEmailDomains":  cfg.AccessPolicy.AllowedEmailDomains,
+		"allowOAuthAutoCreate": cfg.AccessPolicy.AllowOAuthAutoCreate,
+	}, "ok")
+}
+
+func normalizeRegistrationMode(mode string) string {
+	switch strings.TrimSpace(mode) {
+	case "company_email", "oauth_only", "invite_only":
+		return strings.TrimSpace(mode)
+	default:
+		return "admin_only"
+	}
+}
+
+func cleanAccessPolicyDomains(values []string) []string {
+	out := make([]string, 0, len(values))
+	seen := map[string]struct{}{}
+	for _, value := range values {
+		value = strings.TrimSpace(strings.TrimPrefix(value, "@"))
+		value = strings.ToLower(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }
 
 func (c *DashboardController) GetDashboardStat() mvc.Result {

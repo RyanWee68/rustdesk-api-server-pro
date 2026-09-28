@@ -81,6 +81,7 @@ var (
 	ERR1009 = register("ERR-1009", "IdRequired", "auth", "缺少设备 ID", "CLI 设备操作必须提供设备 ID", "Device ID missing", "CLI device operations require a device ID")
 	ERR1010 = register("ERR-1010", "Unauthorized", "auth", "未授权访问", "请先登录，或检查 Token 是否有效", "Unauthorized access", "Please log in first, or check if the Token is valid")
 	ERR1011 = register("ERR-1011", "BingBackgroundUnavailable", "system", "Bing 每日背景暂时不可用", "检查服务器网络连接，稍后重试或切换到固定背景", "Bing daily background is unavailable", "Check the server network and retry later, or use the fixed background")
+	ERR1012 = register("ERR-1012", "AccountDisabled", "auth", "账号已禁用", "请联系管理员启用账号后再登录", "Account is disabled", "Contact the administrator to enable the account before logging in")
 )
 
 var ErrUnauthorized = New(ERR1010.Code, ERR1010.Message)
