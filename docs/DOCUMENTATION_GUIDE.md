@@ -54,7 +54,9 @@
 | `LEGAL_COMPLIANCE.md` | 合规指南 | 合规要求变更时 |
 | `CLEANUP_HISTORY.md` | 清理历史 | 每次清理后 |
 | `V3_QUALITY.md` | 前端质量门禁 | 质量标准变更时 |
+| `HANDOVER.md` | 新会话交接文档 | 每次重要变更后 |
 | `compat/rustdesk-current.json` | 兼容清单 | 版本变更时 |
+| `archive/devlog.txt` | 历史开发流水归档 | 仅追加历史记录时 |
 
 ### 四、子项目文档
 
@@ -95,7 +97,7 @@
 ### 5. 语言规范
 - 所有文档使用简体中文（除 `README_EN.md` 和合规文档外）
 - 代码注释使用简体中文
-- 错误消息使用简体中文并带 `ERR-xxxx` 编码前缀
+- 错误消息使用简体中文并带 `ERR-xxxx` 编码前缀。不得新增逗号分隔的旧格式。
 
 ## 已废弃文档
 

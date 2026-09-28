@@ -424,6 +424,8 @@ Docker 镜像启动脚本会自动执行 `sync`。升级后建议查看日志确
 
 ## 文档索引
 
+- 完整文档索引：`docs/README.md`
+- 当前状态：`docs/CURRENT_STATUS.md`
 - 项目详细描述：`docs/PROJECT_DESCRIPTION.md`
 - 经验教训与项目偏好：`docs/LESSONS_LEARNED.md`
 - 使用说明：`docs/USAGE.md`
@@ -431,6 +433,7 @@ Docker 镜像启动脚本会自动执行 `sync`。升级后建议查看日志确
 - OpenWrt 一体化部署与对齐更新：`docs/OPENWRT_ONE_CONTAINER.md`
 - 端口说明：`docs/PORTS.md`
 - 排障手册：`docs/TROUBLESHOOTING.md`
+- 密钥处理规范：`docs/SECRET_HANDLING.md`
 
 ## License
 

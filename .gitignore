@@ -44,6 +44,10 @@ logs/
 server.local.yaml
 server.prod.yaml
 server.production.yaml
+*.local.http
+*.private.http
+http-client.env.json
+*.http.env.json
 *.pem
 *.key
 *.crt

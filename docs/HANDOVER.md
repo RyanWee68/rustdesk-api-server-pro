@@ -1,154 +1,92 @@
 # 交接文档
 
-> 本文档供新会话快速了解项目当前状态，避免重复探索。每次重要变更后应同步更新。
+> 本文档供新会话快速了解项目当前状态，避免重复探索。易变化事实只指向单一事实来源，不在此处重复维护。
 
-## 最近一次变更
+## 当前事实入口
 
-- **日期**：2026-08-14
-- **版本**：1.3.7（线上已部署）
-- **变更内容**：修复普通用户通过收藏访问 `/#/403` 后点击"返回首页"死循环的问题
-- **部署状态**：已成功部署到线上，容器正常运行，端口 16888
-
-## 本次修复详情
-
-### 问题
-- **现象**：普通用户（R_USER 角色）通过浏览器收藏访问 `http://<host>:<port>/#/403` 时，点击"返回首页"按钮会跳转到 `/home`（仅 R_SUPER 可访问）→ 无权限 → 再次跳转到 403，形成死循环
-- **根因**：`/403` 是 constant 路由，访问时不初始化 auth route，导致 root 路由的 redirect 未根据角色更新（普通用户应 redirect 到 `/user/profile`）
-- **修复文件**：`soybean-admin/src/components/common/exception-base.vue`
-- **修复方案**：在"返回首页"按钮的点击处理中，如果用户已登录但 auth route 未初始化，先调用 `authStore.initUserInfo()` 和 `routeStore.initAuthRoute()` 初始化路由，确保 root redirect 已根据角色更新后再跳转
-- **验证**：`pnpm typecheck` 通过，`vite build` 通过，`go test ./...` 通过，`go vet ./...` 通过
+- 当前版本：以根目录 `VERSION` 为准。
+- 当前状态：以 [CURRENT_STATUS.md](./CURRENT_STATUS.md) 为准。
+- 文档索引：以 [README.md](./README.md) 和 [DOCUMENTATION_GUIDE.md](./DOCUMENTATION_GUIDE.md) 为准。
+- 部署方式：当前推荐单容器一体化服务；部署细节见 [DOCKER.md](./DOCKER.md) 和 [OPENWRT_ONE_CONTAINER.md](./OPENWRT_ONE_CONTAINER.md)。
+- 端口规则：默认 HTTP 端口为 `12345`，实际监听以 `server.yaml` 的 `httpConfig.port` 或运行环境变量为准；详见 [PORTS.md](./PORTS.md)。
 
 ## 项目快速概览
 
-### 基本信息
-- **项目名称**：RustDesk API Server Pro（兼容增强版）
-- **技术栈**：Go + Vue3 + SQLite/MySQL
-- **版本**：1.3.1
-- **主分支**：main
-- **工作目录**：`E:\Visual_Studio_Code\07_Rustdesk-api-server-pro`
+- 项目名称：RustDesk API Server Pro（兼容增强版）。
+- 技术栈：Go + Vue3 + SQLite/MySQL。
+- 主分支：`main`。
+- 仓库结构：
+  - `backend/`：Go 后端（Iris v12 + Xorm + SQLite/MySQL）。
+  - `soybean-admin/`：Vue3 管理后台（Vite + Naive UI + Pinia）。
+  - `docs/`：项目文档。
+  - `Dockerfile`：多阶段构建。
+  - `VERSION`：版本号单一事实来源。
 
-### 架构
-- 单 HTTP 端口对外提供服务
+## 架构边界
+
+- 单 HTTP 服务同时提供：
   - RustDesk 客户端 API：`/api/*`
   - 管理后台接口：`/admin/*`
   - 用户门户接口：`/user-portal/*`
   - 管理后台前端：`/`
   - plugin-sign 兼容：`/lic/web/api/plugin-sign`
+- 前端使用 hash 路由模式。
+- plugin-sign、企业策略等能力是兼容占位或最小兼容模型，不能描述为官方完整 Pro 能力。
 
-### 关键目录
-- `backend/`：Go 后端（Iris v12 + Xorm + SQLite/MySQL）
-- `soybean-admin/`：Vue3 管理后台（Vite + Naive UI + Pinia）
-- `docs/`：项目文档
-- `Dockerfile`：多阶段构建（Go + Node + Alpine）
-- `VERSION`：版本号（单一事实来源，CI 自动递增 PATCH）
+## 鉴权中间件
 
-### 鉴权中间件
-- `AdminAuth`：管理员鉴权（`is_admin=true`）
-- `UserAuth`：用户鉴权（允许 admin 和普通用户）
-- `AdminOrUserAuth`：管理员或用户鉴权（查看权限，操作需检查 `isAdmin`）
-- `ApiAuth`：客户端 API 鉴权（`is_admin=false`）
+- `AdminAuth`：管理员鉴权（`is_admin=true`）。
+- `UserAuth`：用户鉴权（允许 admin 和普通用户）。
+- `AdminOrUserAuth`：管理员或用户鉴权，查看允许，写操作需检查 `isAdmin`。
+- `ApiAuth`：客户端 API 鉴权（`is_admin=false`）。
+- 鉴权中间件返回 401/406 时必须使用 `StopWithJSON`，错误消息必须带 `ERR-xxxx` 编码前缀。
 
-### 前端路由关键点
-- 使用 hash 路由模式（`VITE_ROUTER_HISTORY_MODE=hash`）
-- 静态路由模式（`VITE_AUTH_ROUTE_MODE=static`）
-- 超级管理员角色：`R_SUPER`（`VITE_STATIC_SUPER_ROLE=R_SUPER`）
-- 普通用户角色：`R_USER`
-- 首页路由：`VITE_ROUTE_HOME=home`（超级管理员），普通用户动态更新为 `user_profile`
-- constant 路由（如 403/404/500）不需要登录即可访问
-
-## 开发与构建
-
-### 前端
-```bash
-cd soybean-admin
-pnpm install        # 安装依赖
-pnpm typecheck      # 类型检查（vue-tsc --noEmit --skipLibCheck）
-pnpm build          # 生产构建（vite build --mode prod）
-# 构建产物在 soybean-admin/dist/
-```
+## 本地验证
 
 ### 后端
+
 ```bash
 cd backend
-go test ./...       # 单元测试
-go vet ./...        # 静态检查
-go build -o rustdesk-api-server-pro.exe .  # Windows 编译
-# 交叉编译 Linux
-GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o rustdesk-api-server-pro .
+go test ./...
+go vet ./...
+go build -o rustdesk-api-server-pro.exe .
 ```
 
-### 部署前端到后端
+### 前端
+
 ```bash
-# 清理 backend/dist 并复制前端构建产物
-Remove-Item backend\dist\* -Recurse -Force
-Copy-Item soybean-admin\dist\* backend\dist -Recurse -Force
+cd soybean-admin
+pnpm install
+pnpm typecheck
+pnpm build
 ```
 
-### 完整构建流程
-1. `cd soybean-admin && pnpm typecheck && pnpm build`
-2. 复制 `soybean-admin/dist/*` 到 `backend/dist/`
-3. `cd backend && go build` 或交叉编译 Linux 版本
-4. 部署到容器：`docker cp /tmp/rustdesk-api-server-pro rustdesk-api-server-pro:/app/rustdesk-api-server-pro`
-5. `docker exec rustdesk-api-server-pro chmod 755 /app/rustdesk-api-server-pro`
-6. `docker restart rustdesk-api-server-pro`
-7. `docker logs rustdesk-api-server-pro --tail 100` 确认启动成功
+### 安全检查
 
-## 部署环境
+```bash
+git grep -nE "(BEGIN RSA|BEGIN OPENSSH|AKIA|ghp_|clientSecret|password|private_key|token)" -- .
+```
 
-- **远程设备**：NAS / Linux Docker 主机
-- **容器名**：`rustdesk-api-server-pro`
-- **默认端口**：16888（环境变量 PORT=16888）
-- **网络模式**：bridge
-- **重启策略**：unless-stopped
-- **外部访问**：`http://liyan-fnosnas.dynv6.net:16888/`
-- **SSH 连接**：`ssh FnOSnas`（端口 2828，用户 LiYan）
-- **镜像**：`ghcr.io/liyan-lucky/rustdesk-api-server-pro:latest`
-- **数据目录**：`/vol1/docker/rustdesk-api-server-pro`
-- **hbbs 目录**：`/vol1/docker/rustdesk/hbbs`
-- **配置文件**：`/vol1/docker/rustdesk-api-server-pro/server.yaml`
+人工确认命中项只包含代码字段名、测试占位符或文档占位符。手工接口文件只能提交占位符，真实 token、密码和 Cookie 放入被忽略的 `*.local.http` 或 `*.private.http`。
 
-## 关键文档索引
+## 关键文档
 
 | 文档 | 用途 |
 |------|------|
 | `README.md` | 项目总览、快速开始、配置说明 |
-| `docs/PROJECT_DESCRIPTION.md` | 项目详细描述（架构、API、数据模型） |
-| `docs/CURRENT_STATUS.md` | 当前能力与边界 |
+| `docs/CURRENT_STATUS.md` | 当前能力、架构和边界 |
+| `docs/PROJECT_DESCRIPTION.md` | 项目详细描述 |
+| `docs/PROJECT_WORKFLOW.md` | 开发、验证、提交和发布规范 |
 | `docs/LESSONS_LEARNED.md` | 经验教训与技术笔记 |
+| `docs/DOCKER.md` | Docker 部署 |
+| `docs/OPENWRT_ONE_CONTAINER.md` | OpenWrt 一体化部署 |
+| `docs/PORTS.md` | 端口说明 |
 | `docs/TROUBLESHOOTING.md` | 排障手册 |
-| `docs/USAGE.md` | 使用说明（部署、升级、验证） |
-| `docs/TODO.md` | 待办事项 |
-| `docs/OAUTH_PROVIDERS.md` | OAuth Provider 规范 |
-| `docs/FULL_LOGIC_AUDIT_REPORT.md` | 全仓功能逻辑审计报告 |
-| `AGENTS.md` | AI 开发指南 |
+| `docs/SECRET_HANDLING.md` | 密钥处理规范 |
+| `AGENTS.md` | AI 代理与开发规则 |
 
-## 已知限制（非 bug）
+## 交接维护要求
 
-- plugin-sign 是兼容占位实现，不是官方真实签名服务
-- `/api/devices/deploy` 返回 `NOT_ENABLED`，不写入 hbbs 部署白名单
-- 企业分组、策略、accessible 权限是最小兼容模型，不是完整官方 Pro 权限模型
-- 录屏上传只负责文件落盘，没有完整索引、归档、清理和权限控制
-- `/api/oidc/*` 已实现客户端兼容协议，复用 `/api/oauth/*` 的服务端回调+轮询逻辑
-
-## 常见问题快速排查
-
-| 现象 | 原因 | 处理 |
-|------|------|------|
-| `/api/*` 正常但首页 404 | `httpConfig.staticdir` 指向错误 | 确认指向 `/app/dist` |
-| 升级后页面报 SQL 字段不存在 | 数据库未执行 `sync` | 执行 `sync` 并重启 |
-| OAuth 登录闪退 | 旧版前端缓存或 state 过期 | 强制刷新浏览器，检查回调地址 |
-| 设备频繁离线 | 心跳间隔与 `deviceCheckJob.duration` 不匹配 | 调整配置 |
-| 普通用户访问 403 后无法返回首页 | **已修复**（本次变更） | 升级到最新版本 |
-
-## Git 规则
-
-- 提交信息格式：`<type>: <description>`
-  - `feat`/`fix`/`refactor`/`docs`/`test`/`chore`
-- 提交前必须测试通过
-- 禁止提交敏感信息
-
-## 下一步建议
-
-1. 部署本次修复到线上并验证
-2. 完成 `docs/TODO.md` 中的高优先级待办（客户端 OAuth/WebAuth 验收、普通用户权限测试）
-3. 补充单元测试覆盖率到 >70%
+- 重要变更后同步更新本文件，但不要复制会随发布自动变化的版本号、线上主机、个人 SSH alias、真实路径或私有部署参数。
+- 部署、端口、OAuth、数据库、默认配置变化时，同步更新 `CURRENT_STATUS.md`、根 README 和对应专项文档。
+- 历史流水放入 `docs/archive/devlog.txt`，不要把旧事实保留为当前事实。

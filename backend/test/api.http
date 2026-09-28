@@ -1,24 +1,31 @@
-### Send POST request with json body
-POST http://localhost:8080/api/login
+@baseUrl = http://localhost:12345
+@username = REPLACE_WITH_USERNAME
+@password = REPLACE_WITH_PASSWORD
+@deviceId = REPLACE_WITH_DEVICE_ID
+@deviceUuid = REPLACE_WITH_DEVICE_UUID
+@apiToken = REPLACE_WITH_API_TOKEN
+
+### 登录
+POST {{baseUrl}}/api/login
 Content-Type: application/json; charset=utf-8
 
-{"username":"kali","password":"123456","id":"216456628","uuid":"OWFlNTA4YjQtZWVjYy00MjU0LThiYmItNTRjYjVmYTRkNDJl","autoLogin":true,"type":"account","deviceInfo":{"os":"windows","type":"client","name":"desktop-s11sceo"}}
+{"username":"{{username}}","password":"{{password}}","id":"{{deviceId}}","uuid":"{{deviceUuid}}","autoLogin":true,"type":"account","deviceInfo":{"os":"windows","type":"client","name":"desktop-example"}}
 
-### logout
-POST http://localhost:8080/api/logout
+### 退出登录
+POST {{baseUrl}}/api/logout
 Content-Type: application/json; charset=utf-8
-Authorization: Bearer QkW914xymEh20atplVjAA8ZQ1tsKJcw3hmM7paj2ZSg=
+Authorization: Bearer {{apiToken}}
 
-{"id":"216456628","uuid":"OWFlNTA4YjQtZWVjYy00MjU0LThiYmItNTRjYjVmYTRkNDJl"}
+{"id":"{{deviceId}}","uuid":"{{deviceUuid}}"}
 
-### currentUser
-POST http://localhost:8080/api/currentUser
+### 当前用户
+POST {{baseUrl}}/api/currentUser
 Content-Type: application/json; charset=utf-8
-Authorization: Bearer QkW914xymEh20atplVjAA8ZQ1tsKJcw3hmM7paj2ZSg=
+Authorization: Bearer {{apiToken}}
 
-{"id":"216456628","uuid":"OWFlNTA4YjQtZWVjYy00MjU0LThiYmItNTRjYjVmYTRkNDJl"}
+{"id":"{{deviceId}}","uuid":"{{deviceUuid}}"}
 
-### ab
-GET http://localhost:8080/api/ab
+### 地址簿
+GET {{baseUrl}}/api/ab
 Content-Type: application/json; charset=utf-8
-Authorization: Bearer yC37jv8ZJXufyIXa-2LuxKVp1pcpPdFHgVAR9-aFRcA=
+Authorization: Bearer {{apiToken}}

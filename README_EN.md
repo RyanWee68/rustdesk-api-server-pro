@@ -335,10 +335,15 @@ A: These are compatibility placeholders. Full implementation is required if you 
 
 ## Documentation Index
 
+- Full documentation index: `docs/README.md`
+- Current status: `docs/CURRENT_STATUS.md`
+- Project description: `docs/PROJECT_DESCRIPTION.md`
 - Usage: `docs/USAGE.md`
 - Docker: `docs/DOCKER.md`
+- OpenWrt one-container deployment: `docs/OPENWRT_ONE_CONTAINER.md`
 - Ports: `docs/PORTS.md`
 - Troubleshooting: `docs/TROUBLESHOOTING.md`
+- Secret handling: `docs/SECRET_HANDLING.md`
 
 ## License
 

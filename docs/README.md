@@ -18,31 +18,33 @@
 ## 部署与运维
 
 9. `DOCKER.md`：Docker / Docker Compose 安装、配置、升级和排查。
-7. `OPENWRT_ONE_CONTAINER.md`：OpenWrt x86 / 软路由一体化部署与对齐更新。
-8. `PORTS.md`：端口与访问路径说明。
-9. `TROUBLESHOOTING.md`：常见问题与排查。
-10. `USAGE.md`：使用说明。
+10. `OPENWRT_ONE_CONTAINER.md`：OpenWrt x86 / 软路由一体化部署与对齐更新。
+11. `PORTS.md`：端口与访问路径说明。
+12. `TROUBLESHOOTING.md`：常见问题与排查。
+13. `USAGE.md`：使用说明。
 
 ## 开发与设计
 
-11. `OAUTH_PROVIDERS.md`：OAuth Provider 规范。
-12. `API_MATRIX.md`：API 兼容矩阵。
-13. `OFFICIAL_API_COMPATIBILITY_PLAN.md`：官方 API 兼容计划。
-14. `AUTO_COMPAT_UPDATE_DESIGN.md`：自动兼容更新设计。
-15. `AUDIT_LOG_DESIGN.md`：审计日志设计。
-16. `FULL_LOGIC_AUDIT_REPORT.md`：逻辑审计报告。
-17. `RELEASE_PROCESS.md`：发布流程。
-18. `SECRET_HANDLING.md`：密钥处理规范。
-19. `V3_QUALITY.md`：前端质量门禁。
+14. `OAUTH_PROVIDERS.md`：OAuth Provider 规范。
+15. `API_MATRIX.md`：API 兼容矩阵。
+16. `OFFICIAL_API_COMPATIBILITY_PLAN.md`：官方 API 兼容计划。
+17. `AUTO_COMPAT_UPDATE_DESIGN.md`：自动兼容更新设计。
+18. `AUDIT_LOG_DESIGN.md`：审计日志设计。
+19. `FULL_LOGIC_AUDIT_REPORT.md`：逻辑审计报告。
+20. `RELEASE_PROCESS.md`：发布流程。
+21. `SECRET_HANDLING.md`：密钥处理规范。
+22. `V3_QUALITY.md`：前端质量门禁。
+23. `HANDOVER.md`：新会话交接文档。
 
 ## 合规与清理
 
-20. `LEGAL_COMPLIANCE.md`：合规指南。
-21. `CLEANUP_HISTORY.md`：清理历史记录。
+24. `LEGAL_COMPLIANCE.md`：合规指南。
+25. `CLEANUP_HISTORY.md`：清理历史记录。
 
 ## 辅助
 
-22. `compat/rustdesk-current.json`：RustDesk 客户端兼容清单。
+26. `compat/rustdesk-current.json`：RustDesk 客户端兼容清单。
+27. `archive/devlog.txt`：历史开发流水归档，仅用于追溯，不作为当前事实来源。
 
 ## 当前主事实
 
