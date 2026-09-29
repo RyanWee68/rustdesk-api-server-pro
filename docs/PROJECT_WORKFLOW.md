@@ -25,7 +25,7 @@
 ## 3. 当前架构事实
 
 - 后端使用 Go、Iris、Xorm，默认 SQLite，同时支持 MySQL。
-- 前端使用 Vue 3、Vite、TypeScript 和 Naive UI，由后端同端口提供构建后的静态文件。
+- 前端使用 Vue 3、Vite、TypeScript 和 Naive UI，由后端管理端口提供构建后的静态文件。
 - `/api/*` 服务 RustDesk 客户端，`/admin/*` 服务管理后台，`/user-portal/*` 服务普通用户门户。
 - 推荐单容器部署，运行数据和实际配置持久化到 `/app/data`。
 - RustDesk 兼容目标、已实现范围和占位能力以 `API_MATRIX.md`、`CURRENT_STATUS.md` 为准，不能把兼容占位描述为官方 Pro 完整实现。

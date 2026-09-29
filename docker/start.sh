@@ -12,7 +12,8 @@ mkdir -p /app/data
 ADMIN_USER="${ADMIN_USER:-test}"
 ADMIN_PASS="${ADMIN_PASS:-testadmin}"
 PORT="${PORT:-12345}"
-export ADMIN_USER ADMIN_PASS PORT
+ADMIN_PORT="${ADMIN_PORT:-12346}"
+export ADMIN_USER ADMIN_PASS PORT ADMIN_PORT
 
 # Make mounted config at /app/server.yaml effective, because the binary reads server.yaml from CWD.
 # The process runs in /app/data, so keep /app/data/server.yaml in sync with /app/server.yaml.
@@ -33,6 +34,44 @@ if [ -n "$PORT" ]; then
         # Preserve the indentation produced by yaml.v3. Hard-coding two spaces
         # corrupts a persisted four-space YAML file after an admin UI save.
         sed -i "/^httpConfig:/,/^[^ ]/ s|^\([[:space:]]*port:\).*|\1 \"$port_val\"|" /app/data/server.yaml
+    fi
+fi
+
+if [ -n "$ADMIN_PORT" ]; then
+    admin_port_val="$ADMIN_PORT"
+    case "$admin_port_val" in :*) ;; *) admin_port_val=":$admin_port_val" ;; esac
+    if [ -f /app/data/server.yaml ]; then
+        if sed -n "/^httpConfig:/,/^[^ ]/p" /app/data/server.yaml | grep -q '^[[:space:]]*adminPort:'; then
+            sed -i "/^httpConfig:/,/^[^ ]/ s|^\([[:space:]]*adminPort:\).*|\1 \"$admin_port_val\"|" /app/data/server.yaml
+        else
+            tmp_yaml="$(mktemp)"
+            awk -v admin_port_val="$admin_port_val" '
+                /^httpConfig:/ { in_http = 1 }
+                in_http && /^[^ ]/ && $0 !~ /^httpConfig:/ {
+                    if (!inserted) {
+                        print "  adminPort: \"" admin_port_val "\""
+                        inserted = 1
+                    }
+                    in_http = 0
+                }
+                {
+                    print
+                    if (in_http && !inserted && $0 ~ /^[[:space:]]*port:/) {
+                        match($0, /^[[:space:]]*/)
+                        indent = substr($0, RSTART, RLENGTH)
+                        print indent "adminPort: \"" admin_port_val "\""
+                        inserted = 1
+                    }
+                }
+                END {
+                    if (in_http && !inserted) {
+                        print "  adminPort: \"" admin_port_val "\""
+                    }
+                }
+            ' /app/data/server.yaml > "$tmp_yaml"
+            cat "$tmp_yaml" > /app/data/server.yaml
+            rm -f "$tmp_yaml"
+        fi
     fi
 fi
 

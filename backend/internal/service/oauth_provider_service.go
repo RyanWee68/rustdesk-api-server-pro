@@ -1905,7 +1905,11 @@ func (s *OAuthProviderService) issueClientOAuthToken(user *model.User, rustdeskI
 }
 
 func (s *OAuthProviderService) resolveClientCallbackURL(provider config.OAuthProviderConfig, requestBaseURL string) (string, error) {
-	return s.resolveCallbackURL(provider, requestBaseURL)
+	base := strings.TrimRight(strings.TrimSpace(requestBaseURL), "/")
+	if base == "" {
+		return "", errcode.New(errcode.ERR2009.Code, errcode.ERR2009.Message)
+	}
+	return fmt.Sprintf("%s/api/oauth/%s/callback", base, provider.Name), nil
 }
 
 func (s *OAuthProviderService) ConsumeUnifiedCallback(providerName, code, state string) (pollToken, ticket, redirectTo string, err error) {

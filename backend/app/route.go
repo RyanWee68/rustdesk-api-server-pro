@@ -11,6 +11,11 @@ import (
 )
 
 func SetRoute(app *iris.Application) {
+	SetClientRoute(app)
+	SetAdminRoute(app)
+}
+
+func SetClientRoute(app *iris.Application) {
 	apiParty := app.Party("/api")
 	apiMvc := mvc.New(apiParty)
 	apiMvc.Handle(new(api.SystemController))
@@ -37,7 +42,9 @@ func SetRoute(app *iris.Application) {
 		apiWithAuthMvc.Handle(new(api.AddressBookPeerController))
 		apiWithAuthMvc.Handle(new(api.AddressBookTagController))
 	}
+}
 
+func SetAdminRoute(app *iris.Application) {
 	adminParty := app.Party("/admin")
 	adminMvc := mvc.New(adminParty)
 	adminMvc.Handle(new(admin.AuthController))

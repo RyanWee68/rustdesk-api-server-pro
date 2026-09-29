@@ -33,9 +33,11 @@ services:
       - "ADMIN_USER=${ADMIN_USER:-test}"
       - "ADMIN_PASS=${ADMIN_PASS:-testadmin}"
       - "PORT=12345"
+      - "ADMIN_PORT=12346"
       - "RUSTDESK_HBBS_DIR=/root"
     ports:
       - "${FNOS_HTTP_PORT:-12345}:12345"
+      - "${FNOS_ADMIN_HTTP_PORT:-12346}:12346"
     volumes:
       - ./server.yaml:/app/server.yaml
       - ./data:/app/data
@@ -43,21 +45,24 @@ services:
     restart: unless-stopped
     labels:
       name: "RustDesk API Server Pro"
-      desc: "RustDesk API 增强服务端：管理后台前端、后端 API、第三方登录、SQLite 数据持久化"
-      ports: "12345/tcp"
+      desc: "RustDesk API 增强服务端：独立客户端 API、内网管理后台、第三方登录、SQLite 数据持久化"
+      ports: "12345/tcp,12346/tcp"
 YAML
 
 docker compose up -d
 docker compose logs -f rustdesk-api-server-pro
 ```
 
-飞牛 Docker 使用桥接网络时，可在同目录的 `.env` 中设置宿主机端口，容器内端口固定为 `12345`：
+飞牛 Docker 使用桥接网络时，可在同目录的 `.env` 中设置宿主机端口，容器内客户端 API 端口默认 `12345`，管理端口默认 `12346`：
 
 ```dotenv
 FNOS_HTTP_PORT=12345
+FNOS_ADMIN_HTTP_PORT=12346
 ADMIN_USER=test
 ADMIN_PASS=testadmin
 ```
+
+路由器公网端口只转发 `FNOS_HTTP_PORT`。`FNOS_ADMIN_HTTP_PORT` 只供局域网访问，不要做公网转发。
 
 账号只在空数据目录首次启动时创建。生产环境应立即替换示例密码；后续升级会复用现有数据库、环境变量、挂载和端口映射，不会重置账号。
 
@@ -73,12 +78,14 @@ docker run -d \
   --name rustdesk-api-server-pro \
   --restart unless-stopped \
   -p "${FNOS_HTTP_PORT:-12345}:12345" \
+  -p "${FNOS_ADMIN_HTTP_PORT:-12346}:12346" \
   --label "name=RustDesk API Server Pro" \
-  --label "desc=RustDesk API 增强服务端：管理后台前端、后端 API、第三方登录、SQLite 数据持久化" \
-  --label "ports=12345/tcp" \
+  --label "desc=RustDesk API 增强服务端：独立客户端 API、内网管理后台、第三方登录、SQLite 数据持久化" \
+  --label "ports=12345/tcp,12346/tcp" \
   -e ADMIN_USER=test \
   -e ADMIN_PASS='testadmin' \
   -e PORT=12345 \
+  -e ADMIN_PORT=12346 \
   -e RUSTDESK_HBBS_DIR=/root \
   -v $(pwd)/server.yaml:/app/server.yaml \
   -v $(pwd)/data:/app/data \
@@ -110,7 +117,7 @@ sh /tmp/update-openwrt-one-container.sh
 - 使用 `--network host`
 - 删除旧 `rustdesk-web` 容器，避免旧前端干扰
 - 启动一体化 `rustdesk-api-server-pro` 容器
-- 添加中文 `label` 和 `ports=12345/tcp` 标记
+- 添加中文 `label` 和 `ports=12345/tcp,12346/tcp` 标记
 
 ## 常用命令
 
@@ -169,7 +176,7 @@ chmod 700 ./update-rustdesk-api.sh
 2. 创建 `/app/data`
 3. 若 `/app/data/server.yaml` 不存在，将挂载的 `/app/server.yaml` 复制过去（避免覆盖用户修改）
 4. 切换工作目录到 `/app/data`
-5. 若设置了 `PORT` 环境变量，更新 `httpConfig.port`（仅修改 httpConfig 段）
+5. 若设置了 `PORT` / `ADMIN_PORT` 环境变量，分别更新 `httpConfig.port` / `httpConfig.adminPort`（仅修改 httpConfig 段）
 6. 检测并替换不安全的默认 signKey
 7. 执行 `rustdesk-api-server-pro sync`
 8. 若首次启动且设置了 `ADMIN_USER` / `ADMIN_PASS`，自动创建管理员
@@ -182,14 +189,15 @@ chmod 700 ./update-rustdesk-api.sh
 Dockerfile 中的默认项：
 
 - 镜像内工作目录：`/app`
-- 默认声明端口：`EXPOSE 12345`
+- 默认声明端口：`EXPOSE 12345 12346`
 - 启动命令：`sh /app/start.sh`
 
-注意：`EXPOSE 12345` 只是镜像声明，程序实际监听端口仍由 `PORT` 或 `server.yaml` 的 `httpConfig.port` 决定。
+注意：`EXPOSE 12345 12346` 只是镜像声明，程序实际监听端口仍由 `PORT` / `ADMIN_PORT` 或 `server.yaml` 的 `httpConfig.port` / `httpConfig.adminPort` 决定。
 
 示例 `backend/server.yaml` 常见默认值：
 
 - `httpConfig.port: ":12345"`
+- `httpConfig.adminPort: ":12346"`
 - `httpConfig.staticdir: "/app/dist"`
 - `db.driver: "sqlite"`
 - `db.dsn: "./server.db"`
@@ -217,6 +225,7 @@ httpConfig:
   printRequestLog: false
   staticdir: "/app/dist"
   port: ":12345"
+  adminPort: ":12346"
 
 smtpConfig:
   host: "127.0.0.1"
@@ -243,7 +252,8 @@ jobsConfig:
 
 - `ADMIN_USER`：首次启动自动创建管理员用户名（可选）
 - `ADMIN_PASS`：首次启动自动创建管理员密码（可选）
-- `PORT`：覆盖 `server.yaml` 中的监听端口，如 `PORT=21114`（可选）
+- `PORT`：覆盖 `server.yaml` 中的客户端 API 监听端口，如 `PORT=21114`（可选）
+- `ADMIN_PORT`：覆盖 `server.yaml` 中的管理后台 Web/API 监听端口，如 `ADMIN_PORT=21115`（可选）
 - `RUSTDESK_HBBS_DIR`：指定 hbbs 数据目录，用于自动读取 `id_ed25519.pub` 获取 KEY（可选）
 - `APP_VERSION`：服务端版本号（Dockerfile 构建时注入，通常无需手动设置）
 - `BUILD_TIME`：构建时间（Dockerfile 构建时注入，通常无需手动设置）
@@ -261,10 +271,10 @@ Docker 部署时，将 hbbs 数据目录挂载到 `/app/data` 即可自动获取
 
 ### 端口配置
 
-Docker 的 `-p` 端口映射只是 NAT 转发，不改变应用实际监听端口。设置 `PORT` 环境变量可同时修改应用监听端口和配置文件：
+Docker 的 `-p` 端口映射只是 NAT 转发，不改变应用实际监听端口。设置 `PORT` / `ADMIN_PORT` 环境变量可同时修改应用监听端口和配置文件：
 
 ```bash
-docker run -e PORT=21114 -p 21114:21114 ...
+docker run -e PORT=21114 -e ADMIN_PORT=21115 -p 21114:21114 -p 21115:21115 ...
 ```
 
 生效条件：
@@ -276,11 +286,13 @@ docker run -e PORT=21114 -p 21114:21114 ...
 
 ## 5. 访问方式与端口说明
 
-假设 `server.yaml` 配置 `httpConfig.port: ":12345"`：
+假设 `server.yaml` 配置 `httpConfig.port: ":12345"`、`httpConfig.adminPort: ":12346"`：
 
-- 管理后台页面：`http://<host>:12345/`
 - 客户端 API：`http://<host>:12345/api/...`
-- 管理后台接口：`http://<host>:12345/admin/...`
+- 管理后台页面：`http://<host>:12346/`
+- 管理后台接口：`http://<host>:12346/admin/...`
+
+路由器公网端口只转发客户端 API 端口。管理端口只建议在局域网、VPN 或受控反向代理中访问。
 
 更多细节可结合：
 
@@ -288,19 +300,31 @@ docker run -e PORT=21114 -p 21114:21114 ...
 
 ## 6. 第三方登录与反向代理
 
-新版推荐使用 `oauth.providers` 配置 GitHub / Google / OIDC。回调路径为：
+新版推荐使用 `oauth.providers` 配置 GitHub / Google / OIDC。管理后台登录回调路径为：
 
 ```text
 /admin/auth/oauth/<provider>/callback
 ```
 
-如果使用外部 Nginx / Caddy / OpenWrt 反代，请统一反代到一体化服务，例如：
+客户端第三方登录会使用公网客户端 API 端口上的回调路径：
+
+```text
+/api/oauth/<provider>/callback
+```
+
+如果使用外部 Nginx / Caddy / OpenWrt 反代，建议只把公网域名反代到客户端 API 端口，例如：
 
 ```text
 127.0.0.1:12345
 ```
 
-不要再让 `/` 指向旧 `rustdesk-web` 的 dist。
+管理后台请使用内网地址、VPN、ACL 或防火墙限制访问，例如：
+
+```text
+127.0.0.1:12346
+```
+
+不要再让 `/` 指向旧 `rustdesk-web` 的 dist，也不要把管理端口转发到公网。
 
 反代建议传递：
 
@@ -314,8 +338,8 @@ proxy_set_header X-Real-IP $remote_addr;
 用于检查第三方登录配置是否生效：
 
 ```bash
-curl http://127.0.0.1:12345/admin/auth/oauth/providers
-curl "http://127.0.0.1:12345/admin/auth/oauth/url?provider=github"
+curl http://127.0.0.1:12346/admin/auth/oauth/providers
+curl "http://127.0.0.1:12346/admin/auth/oauth/url?provider=github"
 ```
 
 ## 7. 升级命令
@@ -364,7 +388,7 @@ docker rm -f rustdesk-api-server-pro
 - `oauth.providers` 没有启用任何 provider
 - 当前访问入口和 OAuth `redirectUrl` 不一致
 
-建议：删除旧 `rustdesk-web` 容器，只保留一体化 `rustdesk-api-server-pro` 容器，再访问 `http://<host>:12345/`。
+建议：删除旧 `rustdesk-web` 容器，只保留一体化 `rustdesk-api-server-pro` 容器，再访问管理端口 `http://<host>:12346/`。
 
 ### 8.4 数据丢失
 
@@ -430,9 +454,9 @@ docker pull ghcr.io/liyan-lucky/rustdesk-api-server-pro:latest
 最小上线清单：
 
 1. 修改并固定 `signKey`
-2. 配置正确的 `httpConfig.port`
+2. 配置正确的 `httpConfig.port` 和 `httpConfig.adminPort`
 3. 持久化 `/app/data`
 4. 首次启动创建管理员
 5. 删除旧前端容器，避免旧 dist 干扰
-6. 如使用反代，统一反代到一体化服务
+6. 如使用反代，只把公网入口反代到客户端 API 端口，管理端口保持内网访问
 7. 用最新版 RustDesk 客户端做冒烟测试：登录、地址簿、设备列表、分组面板、审计、录制上传

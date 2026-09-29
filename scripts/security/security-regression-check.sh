@@ -41,6 +41,7 @@ grep -q 'CHANGE_ME_TO_A_RANDOM_32_BYTE_SECRET' docker/start.sh || fail "Docker p
 grep -q 'ADMIN_USER="${ADMIN_USER:-test}"' docker/start.sh || fail "Docker default admin username mismatch"
 grep -q 'ADMIN_PASS="${ADMIN_PASS:-testadmin}"' docker/start.sh || fail "Docker default admin password mismatch"
 grep -q 'PORT="${PORT:-12345}"' docker/start.sh || fail "Docker default port mismatch"
+grep -q 'ADMIN_PORT="${ADMIN_PORT:-12346}"' docker/start.sh || fail "Docker default admin port mismatch"
 grep -q 'HostConfig.PortBindings' scripts/deploy/update-rustdesk-api.sh || fail "Docker updater must preserve port bindings"
 grep -q 'Config.Env' scripts/deploy/update-rustdesk-api.sh || fail "Docker updater must preserve container environment"
 grep -q 'RUNTIME_ENV_FILE' docker/update-openwrt-one-container.sh || fail "one-container updater must persist bootstrap parameters"

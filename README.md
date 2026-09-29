@@ -2,154 +2,85 @@
 
 [English](./README_EN.md)
 
-RustDesk API Server Pro 是一个面向 RustDesk 客户端的第三方 API 服务端实现，包含管理后台前端（`soybean-admin`）。当前版本以“兼容增强”为目标，优先覆盖最新客户端主流程所需的 API，并尽量保持部署轻量与可维护。
+RustDesk API Server Pro 是一个面向 RustDesk 客户端的第三方 API 服务端实现，包含 Go 后端、Vue 3 管理后台和 SQLite/MySQL 数据存储。项目目标是在保持轻量部署的前提下，补齐 RustDesk 客户端主流程所需 API，并提供更易维护的后台管理能力。
 
-🚨 <span style="color:red;">本项目部分内容由 ChatGPT 生成，仅供参考；请在生产环境前务必自行验证、严格测试，并依据业务需求谨慎调整。</span>
+> 本项目部分内容由 ChatGPT 辅助生成，仅供参考。生产环境使用前请自行审查代码、完成真实链路测试，并按业务需求调整配置。
 
-本文档为中文详细版，包含功能清单、架构图、部署步骤、配置说明、截图、FAQ 与 License。更细的专项文档请见文末文档索引。
+## 当前状态
 
-## 最近更新
+- 当前版本：以根目录 [`VERSION`](./VERSION) 为准，当前为 `1.3.20`。
+- 兼容基线：RustDesk 客户端 `1.4.9`，详见 [`docs/compat/rustdesk-current.json`](./docs/compat/rustdesk-current.json)。
+- 推荐部署：单容器一体化服务，使用双 HTTP 端口隔离公网客户端 API 与内网管理后台。
+- 默认客户端 API 端口：`12345/tcp`，以 `server.yaml` 的 `httpConfig.port` 为准，按需由路由器转发到公网。
+- 默认管理后台 Web/API 端口：`12346/tcp`，以 `server.yaml` 的 `httpConfig.adminPort` 为准，只建议局域网或 VPN 访问。
+- 默认数据库：SQLite；可切换为 MySQL。
+- 管理后台：基于 Vue 3、Vite、TypeScript、Naive UI 和 UnoCSS。
+- 后端框架：Go + Iris + Xorm。
 
-- **当前开发状态**（版本以 `VERSION` 为准）
-  - 客户端 WebAuth 按官方轮询协议直接取得认证体，浏览器协议唤醒仅作为可选的返回按钮
-  - Web 后台 OAuth/OIDC 使用一次性 ticket，成功后等待用户信息就绪再进入目标页面
-  - OAuth 回调错误统一使用 `ERR-22xx`，所有控制器错误出口保证带错误码
-  - 新增 `AdminOrUserAuth` 中间件，支持管理员或普通用户访问
-  - 15个操作类API添加 isAdmin 检查，防止普通用户执行管理操作
-  - 前端路由和按钮添加权限控制
-- 兼容 RustDesk 客户端 1.4.9 主流程 API
-- 补齐地址簿兼容别名：`/api/ab/get`、`/api/ab/shared-profiles`、`/api/ab/shared/profiles`、`/api/ab/shared_profiles`
-- 修复共享地址簿跨用户读取和写入归属：共享读取可访问 owner 数据，写入需 owner 或 `rule >= 2`
-- 对齐官方客户端新增 peer 时的 `same_server` 布尔/null/缺省请求形态
-- 修复心跳响应 `modified_at`：未分配策略时回显客户端值，避免触发持续策略重同步
-- 新增"我的同步设备"菜单：管理员可查看所有设备，普通用户可登录查看自己的同步设备
-- 完善“通讯录”菜单：联系人和标签一次展示当前账户下全部地址簿数据，以地址簿名称列和表头筛选切换视图；地址簿、联系人、标签支持 CSV 批量导入导出
-- 管理员可为指定用户创建地址簿；普通用户只能创建自己的地址簿，且不能删除管理员代建的地址簿
-- 新增“关于与更新”页面：显示运行版本和兼容版本，在线更新检查地址可修改并保存在浏览器
-- 新增版本自动递增系统：每次 CI 构建自动递增 PATCH 版本号（VERSION 文件为单一事实来源）
-- 首页更新日志区域显示服务端版本号与构建时间，方便确认是否更新成功
-- Docker 镜像发布改为质量门禁后执行：推送到 `main` 后，线上流程全部成功才自动推送 GHCR（`latest` + `main` + `sha-xxx` 标签）
-- 修复管理员 `/userinfo` API 未返回 `roles` 导致前端菜单过滤异常的问题
-- 修复 `CompatSysinfoVersion` 从常量改为函数后 `/api/status` 缺少调用括号返回 400 的问题
-- 修复 `start.sh` 未导出 `BUILD_TIME` 环境变量的问题
-- 补充 OpenWrt / x86 软路由一体化部署与对齐更新脚本，默认使用 host 网络、`/mnt/docker` 数据目录、中文 label 与端口 label
-- 刷新 Docker 文档，明确当前推荐为单容器一体化部署，旧 `rustdesk-web` 前端容器不再是必需组件
-- 新增后台第三方登录支持：`oidc`、`google`、`github`、`qq`
-- 修复第三方登录在反向代理或多入口环境下可能出现的 `state invalid or expired` 问题
+## 主要能力
 
-## 目录
+- RustDesk 客户端 API 兼容层：登录选项、WebAuth 轮询、设备同步、地址簿、心跳、sysinfo、基础配置探测等。
+- 管理后台：用户、设备、系统配置、访问策略、第三方登录、审计日志、错误日志、邮件模板、会话和令牌管理。
+- 用户门户：普通用户可查看自己的设备、会话、通讯录和个人资料。
+- 地址簿增强：账户级联系人/标签全量视图、共享地址簿、CSV 导入导出、普通用户写权限校验。
+- OAuth/OIDC：统一回调 `/admin/auth/oauth/{provider}/callback`，支持后台登录和客户端登录共用链路。
+- 已适配 Provider：GitHub、QQ、Google、Microsoft、Gitee、GitLab、WeChat、Apple 和通用 OIDC。
+- WebAuthn/Passkey：作为后台登录的可选能力，独立于 RustDesk 客户端认证回传。
+- 国际化：中文、英文及多语言翻译质量检查脚本。
+- Docker 镜像：内置管理后台静态文件，无需再部署独立 `rustdesk-web` 前端容器。
 
-- 项目概述
-- 功能清单
-- 架构图
-- 目录结构
-- 快速开始
-- 配置说明（server.yaml）
-- 端口与访问路径
-- 管理后台与账号
-- 第三方登录
-- 数据与持久化
-- 部署建议（生产）
-- 升级与迁移
-- 常见问题与排查
-- 截图
-- 文档索引
-- License
-
-## 项目概述
-
-本项目由 Go 后端与 Vue 管理后台组成，采用单 HTTP 端口对外提供服务：
-
-- RustDesk 客户端调用的 API（`/api/*`）
-- 管理后台接口（`/admin/*`）
-- 管理后台前端静态页面（`/`）
-
-默认使用 SQLite，也支持 MySQL。配置文件统一为 `backend/server.yaml`（容器内为 `/app/data/server.yaml`）。
-
-当前 Docker 镜像已内置管理后台前端 `dist`，推荐部署为单容器一体化服务。旧的独立 `rustdesk-web` / nginx 前端容器不再是必需组件，升级时应避免继续访问旧前端。
-
-## 功能清单
-
-- RustDesk 客户端主流程 API 兼容增强（兼容 1.4.9）
-- 地址簿读写、共享地址簿、备注字段 `note` 与 `same_server` 兼容
-- 设备列表、用户列表、审计日志基础能力
-- 我的同步设备：管理员查看所有设备，普通用户查看自己的设备
-- 通讯录：联系人全量视图、地址簿管理、标签全量视图、表头筛选和 CSV 批量导入导出
-- 心跳、sysinfo、devices/cli 的最小兼容实现，心跳稳定回显客户端 `modified_at`
-- 录屏上传 `record` 的最小落盘流程（`new/part/tail/remove`）
-- 版本自动递增：CI 每次构建 PATCH 版本号 +1，VERSION 文件为单一事实来源
-- 首页显示服务端版本与构建时间
-- 管理后台前端（`soybean-admin`）静态页面
-- OIDC 与 plugin-sign 兼容占位接口（用于避免 404）
-- SMTP 配置预留（用于后台通知/模板邮件场景）
-
-说明：部分高级能力仍为兼容占位实现，详见“常见问题与排查”。
-
-## 架构图
+## 架构概览
 
 ```mermaid
 flowchart TB
-  subgraph Client
-    A[RustDesk Client]
-  end
-
-  subgraph Server
-    B[Go API Server]
-    C[Admin UI Static Files]
-    D[(SQLite / MySQL)]
-  end
-
-  A -->|/api/*| B
-  B -->|/admin/*| B
-  B -->|/| C
-  B --> D
+  C[RustDesk Client] -->|12345 /api/*| API[Go Client API]
+  C -->|12345 /lic/web/api/*| API
+  A[Admin Browser] -->|12346 /| Admin[Go Admin Web/API]
+  A -->|12346 /admin/*| Admin
+  A -->|12346 /user-portal/*| Admin
+  API --> D[(SQLite / MySQL)]
+  Admin --> D
+  Admin --> F[Static Admin UI]
 ```
+
+默认访问路径：
+
+- RustDesk 客户端 API：`http://<host>:12345/api/...`
+- plugin-sign 兼容接口：`http://<host>:12345/lic/web/api/plugin-sign`
+- 管理后台页面：`http://<host>:12346/`
+- 管理后台 API：`http://<host>:12346/admin/...`
+
+生产部署时，路由器只转发客户端 API 端口 `12345`。管理端口 `12346` 不要做公网端口转发。
 
 ## 目录结构
 
-- `backend/` Go 后端 API 服务
-- `soybean-admin/` 管理后台前端（构建后由后端同端口提供）
-- `docker/` 容器启动脚本与辅助文件
-- `docs/` 使用、端口、Docker、OpenWrt 对齐更新、排障文档
-- `docker-compose.yaml` Docker Compose 示例
-- `Dockerfile` 容器镜像构建文件
+```text
+rustdesk-api-server-pro/
+├── backend/                 # Go 后端
+│   ├── app/                 # 控制器、中间件、表单、模型和路由
+│   ├── internal/            # service、repository、core、errcode 等内部模块
+│   ├── config/              # 配置读取与默认值
+│   ├── db/                  # 数据库初始化与分页
+│   └── server.yaml          # 本地配置示例
+├── soybean-admin/           # Vue 3 管理后台
+├── docker/                  # 容器启动脚本与 OpenWrt 辅助脚本
+├── docs/                    # 项目文档
+├── scripts/                 # 部署、兼容性和安全检查脚本
+├── Dockerfile
+├── docker-compose.yaml
+└── VERSION                  # 版本号单一事实来源
+```
 
 ## 快速开始
 
-以下步骤会在首次启动时执行数据库同步（`sync`）。
-
-### 方式一：二进制部署
-
-1. 构建后端
-
-```powershell
-go build -o rustdesk-api-server-pro.exe .
-```
-
-2. 准备配置 `backend/server.yaml`
-
-3. 同步数据库结构
-
-```powershell
-./rustdesk-api-server-pro.exe sync
-```
-
-4. 启动服务
-
-```powershell
-./rustdesk-api-server-pro.exe start
-```
-
-访问管理后台：`http://<服务器IP>:<端口>/`
-
-### 方式二：Docker Compose（推荐）
+### Docker Compose（推荐）
 
 ```bash
 mkdir -p /opt/rustdesk-api-server-pro/data
 cd /opt/rustdesk-api-server-pro
 
-# 准备 server.yaml（可从仓库示例复制并修改）
-curl -L -o server.yaml https://raw.githubusercontent.com/liyan-lucky/rustdesk-api-server-pro/main/backend/server.yaml
+curl -L -o server.yaml \
+  https://raw.githubusercontent.com/liyan-lucky/rustdesk-api-server-pro/main/backend/server.yaml
 
 cat > docker-compose.yaml <<'YAML'
 services:
@@ -160,26 +91,44 @@ services:
       - "ADMIN_USER=${ADMIN_USER:-test}"
       - "ADMIN_PASS=${ADMIN_PASS:-testadmin}"
       - "PORT=12345"
+      - "ADMIN_PORT=12346"
       - "RUSTDESK_HBBS_DIR=/root"
     ports:
-      - "${FNOS_HTTP_PORT:-12345}:12345"
+      - "${FNOS_HTTP_PORT:-12345}:12345" # RustDesk 客户端 API，可按需公网转发
+      - "${FNOS_ADMIN_HTTP_PORT:-12346}:12346" # 管理后台 Web/API，仅内网访问
     volumes:
       - ./server.yaml:/app/server.yaml
       - ./data:/app/data
       - /vol1/docker/rustdesk/hbbs:/root:ro
     restart: unless-stopped
-    labels:
-      name: "RustDesk API Server Pro"
-      desc: "RustDesk API 增强服务端：管理后台前端、后端 API、第三方登录、SQLite 数据持久化"
-      ports: "12345/tcp"
 YAML
 
 docker compose up -d
+docker logs rustdesk-api-server-pro --tail 100
 ```
 
-说明：`ADMIN_USER` 与 `ADMIN_PASS` 仅首次启动有效，用于自动创建管理员账号。
+`ADMIN_USER` 与 `ADMIN_PASS` 仅首次初始化时用于创建管理员账号。生产环境务必覆盖默认值，并修改 `server.yaml` 中的 `signKey`。
 
-### 方式三：OpenWrt / x86 软路由一键对齐更新
+### 本地二进制运行
+
+```bash
+cd backend
+go build -o rustdesk-api-server-pro .
+./rustdesk-api-server-pro sync
+./rustdesk-api-server-pro start
+```
+
+若需要同时更新管理后台：
+
+```bash
+cd soybean-admin
+pnpm install
+pnpm build
+```
+
+构建产物需要复制到后端静态目录，确保 `server.yaml` 中 `httpConfig.staticdir` 指向正确的 `dist`。
+
+### OpenWrt / x86 软路由
 
 ```bash
 curl -L -o /tmp/update-openwrt-one-container.sh \
@@ -188,16 +137,16 @@ curl -L -o /tmp/update-openwrt-one-container.sh \
 sh /tmp/update-openwrt-one-container.sh
 ```
 
-默认使用 `/mnt/docker/rustdesk-api` 作为数据目录，并会备份旧数据、删除旧 `rustdesk-web` 前端容器、启动一体化服务。详见 `docs/OPENWRT_ONE_CONTAINER.md`。
+默认使用 `/mnt/docker/rustdesk-api` 作为数据目录，并按单容器一体化方式部署。详见 [`docs/OPENWRT_ONE_CONTAINER.md`](./docs/OPENWRT_ONE_CONTAINER.md)。
 
-## 配置说明（server.yaml）
+## 配置说明
 
-关键配置位于 `backend/server.yaml`，容器内生效文件为 `/app/data/server.yaml`。
+后端配置示例位于 [`backend/server.yaml`](./backend/server.yaml)。Docker 启动脚本会将挂载的 `/app/server.yaml` 复制为运行配置，持久化目录为 `/app/data`。
 
-最小参考配置：
+关键字段：
 
 ```yaml
-signKey: "please-change-this-sign-key"
+signKey: "CHANGE_ME_TO_A_RANDOM_32_BYTE_SECRET"
 debugMode: false
 
 db:
@@ -210,78 +159,55 @@ httpConfig:
   printRequestLog: false
   staticdir: "/app/dist"
   port: ":12345"
+  adminPort: ":12346"
 
-smtpConfig:
-  host: "127.0.0.1"
-  port: 1025
-  username: ""
-  password: ""
-  encryption: "none"
-  from: "noreply@example.com"
+oauth:
+  providers: []
 ```
 
-重点说明：
+配置要点：
 
-- `signKey` 必须修改，并且升级时保持固定
-- `httpConfig.port` 为对外 HTTP 监听端口
-- `httpConfig.staticdir` 为管理后台静态文件目录，Docker 镜像内应为 `/app/dist`
-- SQLite 默认数据库位于运行目录下的 `server.db`
-- MySQL 可通过切换 `db.driver` 与 `db.dsn` 使用
+- `signKey` 必须改为随机密钥，并在升级时保持不变。
+- `httpConfig.port` 是 RustDesk 客户端 API 端口，可按需转发到公网。
+- `httpConfig.adminPort` 是管理后台 Web/API 端口，应仅允许局域网或 VPN 访问。
+- `httpConfig.staticdir` 在官方 Docker 镜像内应为 `/app/dist`。
+- SQLite 数据库、运行配置、初始化标记和录屏上传目录建议全部持久化到 `/app/data`。
+- MySQL 可通过切换 `db.driver` 与 `db.dsn` 启用。
+- 反向代理环境建议正确传递 `X-Forwarded-Proto` 和 `X-Forwarded-Host`。
 
-## 端口与访问路径
+## 登录与 OAuth
 
-默认是单端口架构（示例 `:12345`）：
+### RustDesk 客户端 WebAuth
 
-- 管理后台页面：`/`
-- RustDesk 客户端 API：`/api/*`
-- 管理后台接口：`/admin/*`
-- plugin-sign 兼容接口：`/lic/web/api/plugin-sign`
+客户端按官方轮询协议完成认证：
 
-当 `/api` 可用但首页 404 时，请优先检查 `httpConfig.staticdir` 是否正确。
+1. 客户端请求 `/api/login-options` 获取 WebAuth 入口。
+2. 浏览器打开登录页并携带一次性 poll token。
+3. 用户完成密码或 OAuth 登录后，服务端写入一次性认证结果。
+4. 客户端通过轮询接口直接取得认证 JSON。
+5. 浏览器成功页只提供关闭页面和返回 RustDesk 的兜底操作，不承担 token 回传职责。
 
-## 管理后台与账号
+### 第三方登录
 
-- 管理后台入口：`http://<host>:<port>/`
-- Docker 首次启动时若设置 `ADMIN_USER` 与 `ADMIN_PASS` 会自动创建管理员
-- 若需手动调整账号，请在容器内使用管理命令或修改数据库
+新版统一使用 `oauth.providers`。管理后台登录回调地址为：
 
-## 第三方登录
+```text
+/admin/auth/oauth/<provider>/callback
+```
 
-第三方登录统一使用可扩展 Provider 架构，前端登录页会自动展示已启用的 Provider。GitHub 与 QQ 已完成协议适配；Google 和通用 OIDC 保持兼容。
+客户端第三方登录回调地址为：
 
-管理员应优先在后台“第三方登录”页面添加、编辑、启用和检查 GitHub 配置；页面会给出可复制的回调地址。Client Secret 保存后仅显示 `********` 加末 8 位作为识别提示，接口不会返回明文，未修改提示直接保存会保留原值。`server.yaml` 仅保留用于旧版本兼容、自动化部署和后台无法访问时的故障恢复。
+```text
+/api/oauth/<provider>/callback
+```
 
-- 传统单 provider：`oidc`
-- 多 provider：`oauth.providers`
-- 内置 provider 类型：`oidc`、`google`、`github`、`qq`
+后台登录使用一次性 ticket 换取前端会话；客户端 OAuth 通过 state 中的 poll token 写入客户端轮询结果。回调失败统一使用 `ERR-22xx` 错误码。
 
-说明：
-
-- 旧版 `oidc` 配置仍然保留兼容
-- 新版推荐使用 `oauth.providers`
-- 登录成功后仍走后台原有 token 体系，不会额外引入前端独立会话机制
-- `accountRole: admin|user` 决定只能绑定对应角色，禁止跨角色匹配
-- 若开启 `bindByEmail: true`，GitHub 只使用官方 API 返回的已验证邮箱绑定已有账号
-- 自动创建默认关闭；管理员使用 `autoCreateAdmin`，普通用户使用 `autoCreateUser`
-- GitHub 授权使用 PKCE S256，state 与 ticket 为数据库持久化的一次性短期凭据
-- QQ 登录按 OpenID 绑定，不依赖邮箱；QQ Connect 不支持 PKCE，仍使用数据库持久化的一次性 state 和 ticket 防止 CSRF 与回放
-- OAuth/OIDC 回调使用 `/#/` hash 路由；失败固定回到登录页，并区分账户不可绑定、Provider 不可达和 state 过期等错误
-- 微信、Gitee 等国内 Provider 当前仍为计划项；QQ 已完成协议适配，真实可用性仍需使用已审核应用完成回调验收
-
-`backend/server.yaml` 示例：
+Provider 示例：
 
 ```yaml
 oauth:
   providers:
-    - type: "google"
-      name: "google"
-      displayName: "Google"
-      enabled: true
-      clientId: "YOUR_GOOGLE_CLIENT_ID"
-      clientSecret: "YOUR_GOOGLE_CLIENT_SECRET"
-      bindByEmail: true
-      autoCreateAdmin: false
-
     - type: "github"
       name: "github"
       displayName: "GitHub"
@@ -293,130 +219,78 @@ oauth:
       accountRole: "admin"
       bindByEmail: true
       autoCreateAdmin: false
-
-    - type: "oidc"
-      name: "company-sso"
-      displayName: "Company SSO"
-      enabled: true
-      issuer: "https://sso.example.com"
-      clientId: "YOUR_OIDC_CLIENT_ID"
-      clientSecret: "YOUR_OIDC_CLIENT_SECRET"
-      scopes: ["openid", "profile", "email"]
-      bindByEmail: true
-      autoCreateAdmin: false
 ```
 
-默认回调地址规则：
+更完整的 Provider 规则、账户绑定边界和客户端回调说明见 [`docs/OAUTH_PROVIDERS.md`](./docs/OAUTH_PROVIDERS.md)。
 
-- 新版多 provider：`/admin/auth/oauth/<provider>/callback`
-- 旧版兼容 OIDC：`/admin/auth/oidc/callback`
+## 开发与验证
 
-如果你使用反向代理，请确保外部访问域名与回调地址保持一致，并建议传递 `X-Forwarded-Proto`、`X-Forwarded-Host`。
-
-完整 GitHub OAuth App 注册、普通用户配置、安全边界和后续国内外 Provider 路线见 [第三方登录规范](docs/OAUTH_PROVIDERS.md)。
-
-### 授权状态检查
+后端：
 
 ```bash
-curl http://127.0.0.1:12345/admin/auth/oauth/providers
-curl "http://127.0.0.1:12345/admin/auth/oauth/url?provider=github"
+cd backend
+go test ./...
+go vet ./...
+go build -o rustdesk-api-server-pro .
 ```
 
-预期结果：
+前端：
 
-- `providers` 返回非空数组，表示至少有一个 provider 已启用
-- `url` 返回 `enabled: true` 且包含 GitHub 授权地址，表示后端配置和回调生成正常
-
-若登录后出现“页面一闪又回到登录页”，请优先检查：
-
-- GitHub OAuth App 的回调地址是否与服务端 `redirectUrl` 完全一致
-- 实际访问入口与回调入口是否为同一条外部链路
-- 当前镜像是否包含签名 state 修复；旧版本在容器重启、反代切换或多入口场景下容易出现 `state invalid or expired`
-- 是否仍在访问旧 `rustdesk-web` 的旧前端 dist
-
-GitHub 测试场景示例：
-
-```yaml
-oauth:
-  providers:
-    - type: "github"
-      name: "github"
-      displayName: "GitHub"
-      enabled: true
-      clientId: "YOUR_GITHUB_CLIENT_ID"
-      clientSecret: "YOUR_GITHUB_CLIENT_SECRET"
-      redirectUrl: "http://your-host:12345/admin/auth/oauth/github/callback"
-      bindByEmail: true
-      autoCreateAdmin: true
+```bash
+cd soybean-admin
+pnpm i18n:sanitize:guard
+pnpm i18n:check
+pnpm typecheck
+pnpm build
 ```
 
-## 数据与持久化
+兼容性冒烟：
 
-建议持久化目录 `/app/data`，包含：
+```bash
+bash scripts/compat/smoke-api.sh http://127.0.0.1:12345
+TOKEN=YOUR_TOKEN bash scripts/compat/smoke-api.sh http://127.0.0.1:12345
+```
 
-- `server.db`（SQLite）
-- `server.yaml`（实际生效配置）
-- `.init.lock`（首次初始化标记）
-- `record_uploads/`（录屏文件）
+提交前请至少执行受影响模块的测试。所有对外业务错误应包含 `ERR-xxxx` 前缀；鉴权中间件返回 401/406 时应使用 `StopWithJSON`。
 
-未持久化将导致升级或重启后数据丢失。
+## 升级与持久化
 
-## 部署建议（生产）
+建议持久化：
 
-- 修改并固定 `signKey`
-- 明确 `httpConfig.port`
-- 使用反向代理（Nginx/Caddy）统一 80/443
-- 如果从旧部署升级，删除或停用旧 `rustdesk-web` 前端容器
-- 开启必要日志后排查完及时关闭 `printRequestLog`
-- 使用最新 RustDesk 客户端完成冒烟验证
+- `/app/data/server.db`
+- `/app/data/server.yaml`
+- `/app/data/.init.lock`
+- `/app/data/record_uploads/`
 
-## 升级与迁移
-
-每次升级建议执行：
+升级后建议执行或确认容器启动脚本已执行：
 
 ```bash
 rustdesk-api-server-pro sync
 ```
 
-Docker 镜像启动脚本会自动执行 `sync`。升级后建议查看日志确认数据库同步成功。若数据库结构未同步，可能出现登录后部分页面报错、字段不存在等问题。
+从旧部署升级时，建议停用或删除旧 `rustdesk-web` / nginx 前端容器，只保留当前一体化容器，避免访问到旧前端导致登录或路由异常。
 
-## 常见问题与排查
+## 常见问题
 
-问题：管理后台首页打不开，但 `/api/*` 正常
+### 管理后台首页打不开，但 `/api/*` 正常
 
-原因：`httpConfig.staticdir` 指向错误或静态文件未构建
+先确认访问的是管理端口 `12346`，再检查 `httpConfig.staticdir` 是否指向正确的前端构建产物。Docker 镜像内应指向 `/app/dist`。
 
-处理：Docker 镜像内确认 `staticdir` 指向 `/app/dist`
+### 升级后页面报字段不存在
 
-问题：升级后列表/审计页面报 SQL 字段不存在
+通常是数据库结构未同步。执行 `sync` 后重启服务。
 
-原因：数据库未执行 `sync`
+### 第三方登录按钮不显示
 
-处理：执行 `sync` 并重启服务
+检查是否仍访问旧前端容器，并确认至少有一个 `oauth.providers` Provider 已启用。
 
-问题：第三方登录按钮不显示
+### OAuth 回调提示 state 过期或无效
 
-原因：可能仍在访问旧 `rustdesk-web` 的旧前端，或 `oauth.providers` 未启用 provider
+检查外部访问入口、反向代理头、Provider 回调白名单和 `redirectUrl` 是否完全一致。
 
-处理：删除旧前端容器，只保留一体化 `rustdesk-api-server-pro`；检查 `/admin/auth/oauth/providers`
+### 客户端提示 404
 
-问题：RustDesk 客户端提示 404
-
-原因：调用了尚未补齐的接口或使用旧二进制
-
-处理：开启 `printRequestLog` 观察路径，升级服务到最新版本
-
-问题：录屏上传失败
-
-原因：`record_uploads/` 不可写或磁盘不足
-
-处理：检查权限与磁盘空间
-
-问题：OIDC / plugin-sign 无法使用
-
-原因：当前为兼容占位实现
-
-处理：如需完整功能需自行补齐逻辑
+开启 `httpConfig.printRequestLog` 临时观察请求路径，并对照 [`docs/API_MATRIX.md`](./docs/API_MATRIX.md) 和 [`docs/compat/rustdesk-current.json`](./docs/compat/rustdesk-current.json)。
 
 ## 截图
 
@@ -424,17 +298,18 @@ Docker 镜像启动脚本会自动执行 `sync`。升级后建议查看日志确
 
 ## 文档索引
 
-- 完整文档索引：`docs/README.md`
-- 当前状态：`docs/CURRENT_STATUS.md`
-- 项目详细描述：`docs/PROJECT_DESCRIPTION.md`
-- 经验教训与项目偏好：`docs/LESSONS_LEARNED.md`
-- 使用说明：`docs/USAGE.md`
-- Docker 说明：`docs/DOCKER.md`
-- OpenWrt 一体化部署与对齐更新：`docs/OPENWRT_ONE_CONTAINER.md`
-- 端口说明：`docs/PORTS.md`
-- 排障手册：`docs/TROUBLESHOOTING.md`
-- 密钥处理规范：`docs/SECRET_HANDLING.md`
+- [`docs/README.md`](./docs/README.md)：完整文档索引
+- [`docs/CURRENT_STATUS.md`](./docs/CURRENT_STATUS.md)：当前仓库状态
+- [`docs/PROJECT_DESCRIPTION.md`](./docs/PROJECT_DESCRIPTION.md)：项目详细描述
+- [`docs/PROJECT_WORKFLOW.md`](./docs/PROJECT_WORKFLOW.md)：开发、验证和发布流程
+- [`docs/USAGE.md`](./docs/USAGE.md)：使用说明
+- [`docs/DOCKER.md`](./docs/DOCKER.md)：Docker 部署说明
+- [`docs/OPENWRT_ONE_CONTAINER.md`](./docs/OPENWRT_ONE_CONTAINER.md)：OpenWrt 一体化部署
+- [`docs/OAUTH_PROVIDERS.md`](./docs/OAUTH_PROVIDERS.md)：OAuth Provider 规范
+- [`docs/TROUBLESHOOTING.md`](./docs/TROUBLESHOOTING.md)：排障手册
+- [`docs/SECRET_HANDLING.md`](./docs/SECRET_HANDLING.md)：密钥处理规范
+- [`docs/CHANGELOG.md`](./docs/CHANGELOG.md)：变更日志
 
-## License
+## 许可证
 
-本项目使用 AGPL-3.0 许可证，详见 `LICENSE`。
+本项目使用 AGPL-3.0 许可证，详见 [`LICENSE`](./LICENSE)。

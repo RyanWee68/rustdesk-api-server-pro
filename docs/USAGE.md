@@ -5,7 +5,7 @@
 ## 1. 项目组成
 
 - `backend/`：Go 后端 API 服务（客户端接口 + 管理后台接口）
-- `soybean-admin/`：管理后台前端（构建后静态文件由后端同端口提供）
+- `soybean-admin/`：管理后台前端（构建后静态文件由后端管理端口提供）
 - `docker/`：容器相关配置
 
 ## 2. 运行方式概览
@@ -45,7 +45,8 @@ go build -o rustdesk-api-server-pro.exe .
 
 - `db.driver`：`sqlite`（默认）或 `mysql`
 - `db.dsn`：数据库连接字符串
-- `httpConfig.port`：HTTP 监听端口（如 `:12345`）
+- `httpConfig.port`：RustDesk 客户端 API 监听端口（如 `:12345`，可按需转发到公网）
+- `httpConfig.adminPort`：管理后台 Web/API 监听端口（如 `:12346`，建议仅内网访问）
 - `httpConfig.staticdir`：前端静态文件目录（如 `dist` 或 `/app/dist`）
 - `smtpConfig.*`：邮箱功能相关配置（可选）
 
@@ -70,8 +71,8 @@ go build -o rustdesk-api-server-pro.exe .
 
 启动成功后：
 
-- 客户端接口与管理后台都在同一个 HTTP 端口上提供
-- 管理后台前端入口通常为：`http://<服务器IP>:<端口>/`
+- 客户端接口在 `httpConfig.port` 上提供，例如：`http://<服务器IP>:12345/api/...`
+- 管理后台前端和管理接口在 `httpConfig.adminPort` 上提供，例如：`http://<服务器IP>:12346/`
 
 ## 4. 前端开发/构建（如需修改管理后台）
 

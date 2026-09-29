@@ -6,9 +6,11 @@ services:
       - "ADMIN_USER=${ADMIN_USER:-test}" # 仅首次创建；生产环境请覆盖
       - "ADMIN_PASS=${ADMIN_PASS:-testadmin}" # 仅首次创建；生产环境请覆盖
       - "PORT=12345"
+      - "ADMIN_PORT=12346"
       - "RUSTDESK_HBBS_DIR=/root"
     ports:
-      - "${FNOS_HTTP_PORT:-12345}:12345" # 飞牛等桥接网络环境可设置宿主机端口
+      - "${FNOS_HTTP_PORT:-12345}:12345" # RustDesk 客户端 API；路由器只转发这个端口到公网
+      - "${FNOS_ADMIN_HTTP_PORT:-12346}:12346" # 管理后台 Web/API；仅供内网访问，不要在路由器做公网转发
     volumes:
       - ./server.yaml:/app/server.yaml # startup script copies this to /app/data/server.yaml
       - ./data:/app/data # persist sqlite db, init lock, record_uploads and runtime config
@@ -16,5 +18,5 @@ services:
     restart: unless-stopped
     labels:
       name: "RustDesk API Server Pro"
-      desc: "RustDesk API 增强服务端：管理后台前端、后端 API、第三方登录、SQLite 数据持久化"
-      ports: "12345/tcp"
+      desc: "RustDesk API 增强服务端：独立客户端 API、内网管理后台、第三方登录、SQLite 数据持久化"
+      ports: "12345/tcp,12346/tcp"

@@ -8,7 +8,7 @@
 - 当前状态：以 [CURRENT_STATUS.md](./CURRENT_STATUS.md) 为准。
 - 文档索引：以 [README.md](./README.md) 和 [DOCUMENTATION_GUIDE.md](./DOCUMENTATION_GUIDE.md) 为准。
 - 部署方式：当前推荐单容器一体化服务；部署细节见 [DOCKER.md](./DOCKER.md) 和 [OPENWRT_ONE_CONTAINER.md](./OPENWRT_ONE_CONTAINER.md)。
-- 端口规则：默认 HTTP 端口为 `12345`，实际监听以 `server.yaml` 的 `httpConfig.port` 或运行环境变量为准；详见 [PORTS.md](./PORTS.md)。
+- 端口规则：默认客户端 API 端口为 `12345`，默认管理后台 Web/API 端口为 `12346`；实际监听以 `server.yaml` 的 `httpConfig.port` / `httpConfig.adminPort` 或运行环境变量为准；详见 [PORTS.md](./PORTS.md)。
 
 ## 项目快速概览
 
@@ -24,12 +24,9 @@
 
 ## 架构边界
 
-- 单 HTTP 服务同时提供：
-  - RustDesk 客户端 API：`/api/*`
-  - 管理后台接口：`/admin/*`
-  - 用户门户接口：`/user-portal/*`
-  - 管理后台前端：`/`
-  - plugin-sign 兼容：`/lic/web/api/plugin-sign`
+- 双 HTTP 端口分别提供：
+  - 客户端 API 端口：RustDesk 客户端 API `/api/*`、plugin-sign 兼容 `/lic/web/api/plugin-sign`
+  - 管理端口：管理后台接口 `/admin/*`、用户门户接口 `/user-portal/*`、管理后台前端 `/`
 - 前端使用 hash 路由模式。
 - plugin-sign、企业策略等能力是兼容占位或最小兼容模型，不能描述为官方完整 Pro 能力。
 

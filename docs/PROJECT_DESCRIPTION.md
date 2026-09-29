@@ -23,27 +23,28 @@
 项目由三个主要部分组成：
 
 - `backend/`：Go 后端服务，负责客户端 API、管理后台 API、静态资源托管、数据库访问和后台任务。
-- `soybean-admin/`：Vue 3 管理后台，基于 Soybean Admin 模板改造，构建产物由后端同端口提供。
+- `soybean-admin/`：Vue 3 管理后台，基于 Soybean Admin 模板改造，构建产物由后端管理端口提供。
 - `docker/`、`Dockerfile`、`docker-compose.yaml`：容器构建与运行入口。
 
-运行时采用单 HTTP 端口架构：
+运行时采用双 HTTP 端口架构：
 
 ```mermaid
 flowchart TB
-  Client[RustDesk Client] -->|/api/*| Backend[Go API Server]
-  Browser[Admin Browser] -->|/| Static[Admin UI Static Files]
-  Browser -->|/admin/*| Backend
-  Backend --> DB[(SQLite / MySQL)]
-  Backend --> RecordDir[record_uploads]
-  Backend --> SMTP[External SMTP]
+  Client[RustDesk Client] -->|public port /api/*| ClientAPI[Go Client API]
+  Browser[Admin Browser] -->|LAN port /| Static[Admin UI Static Files]
+  Browser -->|LAN port /admin/*| AdminAPI[Go Admin API]
+  ClientAPI --> DB[(SQLite / MySQL)]
+  AdminAPI --> DB
+  ClientAPI --> RecordDir[record_uploads]
+  AdminAPI --> SMTP[External SMTP]
 ```
 
 默认情况下：
 
-- 管理后台页面入口是 `/`。
-- RustDesk 客户端接口前缀是 `/api`。
-- 管理后台接口前缀是 `/admin`。
-- 插件签名兼容接口前缀是 `/lic/web/api`。
+- RustDesk 客户端接口前缀是 `/api`，使用 `httpConfig.port`。
+- 插件签名兼容接口前缀是 `/lic/web/api`，使用 `httpConfig.port`。
+- 管理后台页面入口是 `/`，使用 `httpConfig.adminPort`。
+- 管理后台接口前缀是 `/admin`，使用 `httpConfig.adminPort`。
 - 数据库默认是 SQLite，配置也支持 MySQL。
 
 ## 3. 关键技术栈
@@ -413,7 +414,7 @@ jobsConfig:
 
 ## 12. 管理后台 API
 
-管理后台前端的生产 API Base URL 是 `/admin`，开发环境默认是 `http://localhost:12345/admin` 或 Vite 代理。
+管理后台前端的生产 API Base URL 是 `/admin`，测试环境默认是 `http://localhost:12346/admin`，开发环境可通过 Vite 代理访问管理端口。
 
 ### 12.1 公共后台接口
 
@@ -569,7 +570,7 @@ jobsConfig:
 请求配置：
 
 - 生产环境 `.env.prod`：`VITE_SERVICE_BASE_URL=/admin`。
-- 测试环境 `.env.test`：`VITE_SERVICE_BASE_URL=http://localhost:12345/admin`。
+- 测试环境 `.env.test`：`VITE_SERVICE_BASE_URL=http://localhost:12346/admin`。
 - 开发环境可通过 `VITE_HTTP_PROXY=Y` 使用 Vite 代理。
 - 所有管理 API 请求会自动带上 `Authorization` Header。
 
@@ -636,9 +637,9 @@ docker build -t rustdesk-api-server-pro:local .
 
 本地联调建议：
 
-- 后端监听 `:12345`。
+- 后端客户端 API 默认监听 `:12345`，管理后台 Web/API 默认监听 `:12346`。
 - 前端 `pnpm dev` 使用 Vite 端口 `9527`。
-- `.env.test` 指向 `http://localhost:12345/admin`。
+- `.env.test` 指向 `http://localhost:12346/admin`。
 - 客户端 API 直接访问 `http://localhost:12345/api/...`。
 
 ## 18. 当前能力边界

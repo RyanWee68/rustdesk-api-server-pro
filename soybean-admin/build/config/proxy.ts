@@ -20,7 +20,7 @@ export function createViteProxy(env: Env.ImportMeta, enable: boolean) {
     Object.assign(proxy, createProxyItem(item));
   });
 
-  const adminTarget = baseURL || 'http://localhost:12345';
+  const adminTarget = baseURL || 'http://localhost:12346';
   proxy['/proxy-user-portal'] = {
     target: adminTarget.replace(/\/admin$/, ''),
     changeOrigin: true,

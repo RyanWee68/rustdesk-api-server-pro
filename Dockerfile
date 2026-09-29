@@ -23,6 +23,7 @@ FROM alpine:3.20.3
 ENV ADMIN_USER=test
 ENV ADMIN_PASS=testadmin
 ENV PORT=12345
+ENV ADMIN_PORT=12346
 ENV RUSTDESK_HBBS_DIR=
 ARG APP_VERSION=latest
 ARG BUILD_TIME=""
@@ -35,5 +36,5 @@ COPY --from=golang /backend/rustdesk-api-server-pro .
 COPY --from=golang /backend/server.yaml .
 COPY --from=node /frontend/dist ./dist
 RUN apk add tzdata
-EXPOSE 12345
+EXPOSE 12345 12346
 CMD [ "sh", "/app/start.sh"]

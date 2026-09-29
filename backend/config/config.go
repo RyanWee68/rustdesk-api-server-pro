@@ -62,6 +62,7 @@ type DbConfig struct {
 type HttpConfig struct {
 	PrintRequestLog bool     `yaml:"printRequestLog"`
 	Port            string   `yaml:"port"`
+	AdminPort       string   `yaml:"adminPort"`
 	StaticDir       string   `yaml:"staticdir"`
 	TLSPort         string   `yaml:"tlsPort"`
 	TLSCertFile     string   `yaml:"tlsCertFile"`
@@ -162,6 +163,7 @@ func GetDefaultServerConfig() *ServerConfig {
 		},
 		HttpConfig: &HttpConfig{
 			Port:      ":8080",
+			AdminPort: ":8081",
 			StaticDir: "/app/dist",
 		},
 		SignKey: util.RandomString(32),
@@ -220,14 +222,25 @@ func loadServerConfig() *ServerConfig {
 		return GetDefaultServerConfig()
 	}
 
-	if envPort := os.Getenv("PORT"); envPort != "" {
-		if !strings.HasPrefix(envPort, ":") {
-			envPort = ":" + envPort
-		}
+	if envPort := normalizePort(os.Getenv("PORT")); envPort != "" {
 		cfg.HttpConfig.Port = envPort
+	}
+	if envAdminPort := normalizePort(os.Getenv("ADMIN_PORT")); envAdminPort != "" {
+		cfg.HttpConfig.AdminPort = envAdminPort
 	}
 
 	return cfg
+}
+
+func normalizePort(port string) string {
+	port = strings.TrimSpace(port)
+	if port == "" {
+		return ""
+	}
+	if !strings.HasPrefix(port, ":") {
+		port = ":" + port
+	}
+	return port
 }
 
 func WriteServerConfig(cfg *ServerConfig) {

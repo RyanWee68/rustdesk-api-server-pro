@@ -16,10 +16,13 @@
 
 ```text
 rustdesk-api-server-pro
-├── /          管理后台前端
-├── /admin/*   管理后台接口
-└── /api/*     RustDesk 客户端接口
+├── 12345 /api/*          RustDesk 客户端接口
+├── 12345 /lic/web/api/*  plugin-sign 兼容接口
+├── 12346 /               管理后台前端
+└── 12346 /admin/*        管理后台接口
 ```
+
+路由器公网端口只转发客户端 API 端口 `12345`。管理端口 `12346` 只建议局域网或 VPN 访问。
 
 旧的 `rustdesk-web` nginx 容器不再是必需组件。继续保留旧前端容器时，可能出现后端已经升级、但登录页仍是旧版，导致第三方登录按钮不显示或页面行为不一致。
 
@@ -73,6 +76,7 @@ sh /tmp/update-openwrt-one-container.sh
 
 ```bash
 PORT=12345 \
+ADMIN_PORT=12346 \
 BASE_DIR=/mnt/docker/rustdesk-api \
 BACKUP_DIR=/mnt/docker/backup/rustdesk-api \
 sh /tmp/update-openwrt-one-container.sh
@@ -105,10 +109,12 @@ docker run -d \
   --restart unless-stopped \
   --network host \
   --label "name=RustDesk API Server Pro" \
-  --label "desc=RustDesk API 增强服务端：管理后台前端、后端 API、第三方登录、SQLite 数据持久化" \
-  --label "ports=12345/tcp" \
+  --label "desc=RustDesk API 增强服务端：独立客户端 API、内网管理后台、第三方登录、SQLite 数据持久化" \
+  --label "ports=12345/tcp,12346/tcp" \
   -e ADMIN_USER=test \
   -e ADMIN_PASS='testadmin' \
+  -e PORT=12345 \
+  -e ADMIN_PORT=12346 \
   -v /mnt/docker/rustdesk-api/server.yaml:/app/server.yaml \
   -v /mnt/docker/rustdesk-api/data:/app/data \
   ghcr.io/liyan-lucky/rustdesk-api-server-pro:latest
@@ -118,7 +124,7 @@ docker run -d \
 
 - `ADMIN_USER` / `ADMIN_PASS` 只在 `/app/data/.init.lock` 不存在时自动创建管理员。
 - 老数据目录存在时，修改这两个环境变量不会重置管理员密码。
-- 程序实际监听端口以 `server.yaml` 的 `httpConfig.port` 为准。
+- 程序实际监听端口以 `server.yaml` 的 `httpConfig.port` 和 `httpConfig.adminPort` 为准。
 
 ## 5. 关键配置
 
@@ -131,13 +137,14 @@ httpConfig:
   printRequestLog: false
   staticdir: "/app/dist"
   port: ":12345"
+  adminPort: ":12346"
 ```
 
 重点：
 
 - `signKey` 必须固定，不能每次升级重新生成。
 - `staticdir` 在容器内应为 `/app/dist`。
-- 端口改动时，脚本 label 中的 `PORT` 也建议同步。
+- 端口改动时，脚本环境变量 `PORT` / `ADMIN_PORT` 和 label 也建议同步。
 
 ## 6. 第三方登录对齐
 
@@ -152,7 +159,7 @@ oauth:
       enabled: true
       clientId: "YOUR_GITHUB_CLIENT_ID"
       clientSecret: "YOUR_GITHUB_CLIENT_SECRET"
-      redirectUrl: "http://your-host:12345/admin/auth/oauth/github/callback"
+      redirectUrl: "http://your-lan-host:12346/admin/auth/oauth/github/callback"
       scopes: ["read:user", "user:email"]
       bindByEmail: true
       autoCreateAdmin: true
@@ -165,21 +172,27 @@ oauth:
 检查接口：
 
 ```bash
-curl http://127.0.0.1:12345/admin/auth/oauth/providers
-curl "http://127.0.0.1:12345/admin/auth/oauth/url?provider=github"
+curl http://127.0.0.1:12346/admin/auth/oauth/providers
+curl "http://127.0.0.1:12346/admin/auth/oauth/url?provider=github"
 ```
 
 如果返回 providers 非空，并且 URL 接口包含授权地址，说明后端配置已生效。
 
 ## 7. 外部反向代理建议
 
-如果使用 Nginx / Caddy / OpenWrt 反代，只反代到一体化服务：
+如果使用 Nginx / Caddy / OpenWrt 反代，公网入口只反代到客户端 API 端口：
 
 ```text
 127.0.0.1:12345
 ```
 
-不要再单独把 `/` 指到旧 `rustdesk-web` 的 dist。
+管理入口请只在局域网或 VPN 暴露：
+
+```text
+127.0.0.1:12346
+```
+
+不要再单独把 `/` 指到旧 `rustdesk-web` 的 dist，也不要把管理端口转发到公网。
 
 反代时建议传递：
 
@@ -197,21 +210,21 @@ proxy_set_header X-Real-IP $remote_addr;
 ```bash
 docker ps --filter name=rustdesk-api-server-pro
 docker logs --tail=120 rustdesk-api-server-pro
-curl http://127.0.0.1:12345/admin/auth/oauth/providers
+curl http://127.0.0.1:12346/admin/auth/oauth/providers
 ```
 
 浏览器访问：
 
 ```text
-http://<OpenWrt-IP>:12345/
+http://<OpenWrt-IP>:12346/
 ```
 
 确认：
 
 - 登录页是新版页面
 - 第三方登录按钮按配置显示
-- `/api/*` 路径正常
-- `/admin/*` 路径正常
+- `http://<OpenWrt-IP>:12345/api/*` 路径正常
+- `http://<OpenWrt-IP>:12346/admin/*` 路径正常
 - 日志中没有数据库字段不存在或 sync 失败
 
 ## 9. 回滚

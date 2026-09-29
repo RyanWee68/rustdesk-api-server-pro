@@ -14,6 +14,7 @@ IMAGE="${IMAGE:-ghcr.io/liyan-lucky/rustdesk-api-server-pro:latest}"
 CONTAINER="${CONTAINER:-rustdesk-api-server-pro}"
 LEGACY_WEB_CONTAINER="${LEGACY_WEB_CONTAINER:-rustdesk-web}"
 PORT="${PORT:-}"
+ADMIN_PORT="${ADMIN_PORT:-}"
 ADMIN_USER="${ADMIN_USER:-}"
 ADMIN_PASS="${ADMIN_PASS:-}"
 RUNTIME_ENV_FILE="${RUNTIME_ENV_FILE:-$BASE_DIR/runtime.env}"
@@ -50,6 +51,7 @@ httpConfig:
   printRequestLog: false
   staticdir: "/app/dist"
   port: ":$PORT"
+  adminPort: ":$ADMIN_PORT"
 
 smtpConfig:
   host: "127.0.0.1"
@@ -111,18 +113,22 @@ read_container_env() {
     sed -n "s/^${key}=//p" | tail -n1
 }
 PORT="${PORT:-$(read_container_env PORT)}"
+ADMIN_PORT="${ADMIN_PORT:-$(read_container_env ADMIN_PORT)}"
 ADMIN_USER="${ADMIN_USER:-$(read_container_env ADMIN_USER)}"
 ADMIN_PASS="${ADMIN_PASS:-$(read_container_env ADMIN_PASS)}"
 PORT="${PORT:-$(read_saved_env PORT)}"
+ADMIN_PORT="${ADMIN_PORT:-$(read_saved_env ADMIN_PORT)}"
 ADMIN_USER="${ADMIN_USER:-$(read_saved_env ADMIN_USER)}"
 ADMIN_PASS="${ADMIN_PASS:-$(read_saved_env ADMIN_PASS)}"
 PORT="${PORT:-12345}"
+ADMIN_PORT="${ADMIN_PORT:-12346}"
 ADMIN_USER="${ADMIN_USER:-test}"
 ADMIN_PASS="${ADMIN_PASS:-testadmin}"
 
 umask 077
 {
   printf 'PORT=%s\n' "$PORT"
+  printf 'ADMIN_PORT=%s\n' "$ADMIN_PORT"
   printf 'ADMIN_USER=%s\n' "$ADMIN_USER"
   printf 'ADMIN_PASS=%s\n' "$ADMIN_PASS"
 } > "$RUNTIME_ENV_FILE"
@@ -167,9 +173,11 @@ docker run -d \
   --network host \
   --label "name=RustDesk API Server Pro" \
   --label "desc=RustDesk API 增强服务端：管理后台前端、后端 API、第三方登录、SQLite 数据持久化" \
-  --label "ports=$PORT/tcp" \
+  --label "ports=$PORT/tcp,$ADMIN_PORT/tcp" \
   -e ADMIN_USER="$ADMIN_USER" \
   -e ADMIN_PASS="$ADMIN_PASS" \
+  -e PORT="$PORT" \
+  -e ADMIN_PORT="$ADMIN_PORT" \
   -v "$BASE_DIR/server.yaml:/app/server.yaml" \
   -v "$BASE_DIR/data:/app/data" \
   "$IMAGE"
@@ -185,7 +193,9 @@ docker logs --tail=120 "$CONTAINER" || true
 
 log "本机接口检查"
 if command -v curl >/dev/null 2>&1; then
-  curl -fsS "http://127.0.0.1:$PORT/admin/auth/oauth/providers" || true
+  curl -fsS "http://127.0.0.1:$PORT/api/health" || true
+  printf '\n'
+  curl -fsS "http://127.0.0.1:$ADMIN_PORT/admin/auth/oauth/providers" || true
   printf '\n'
 else
   warn "系统没有 curl，跳过接口检查"
@@ -199,7 +209,8 @@ fi
 cat <<EOF
 
 更新完成。
-访问地址: http://<OpenWrt-IP>:$PORT/
+客户端 API 地址: http://<OpenWrt-IP>:$PORT/
+管理后台地址: http://<OpenWrt-IP>:$ADMIN_PORT/
 数据目录: $BASE_DIR/data
 配置文件: $BASE_DIR/server.yaml
 备份文件: $BACKUP_FILE
@@ -208,5 +219,5 @@ cat <<EOF
 1. ADMIN_USER / ADMIN_PASS 仅在 /app/data/.init.lock 不存在时生效。
 2. 配置以 $BASE_DIR/server.yaml 为准，容器启动时会复制到 /app/data/server.yaml。
 3. 新版已经内置管理后台前端，不需要单独 rustdesk-web 容器。
-4. 若使用外部反代，请统一反代到 127.0.0.1:$PORT，并传递 X-Forwarded-Proto / X-Forwarded-Host。
+4. 路由器公网端口只转发客户端 API 端口 $PORT；管理端口 $ADMIN_PORT 不要做公网转发。
 EOF

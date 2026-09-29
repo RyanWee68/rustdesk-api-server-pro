@@ -11,7 +11,8 @@ db:
 httpConfig:
   printRequestLog: false
   staticdir: "/app/dist"
-  port: ":12345" # api server port
+  port: ":12345" # RustDesk 客户端 API 公网端口
+  adminPort: ":12346" # 管理后台 Web/API 内网端口
 
 smtpConfig:
   host: "127.0.0.1"
