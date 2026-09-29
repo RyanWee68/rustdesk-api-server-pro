@@ -12,7 +12,7 @@ declare namespace UnionKey {
   type LoginModule = 'pwd-login' | 'user-login';
 
   /** Theme scheme */
-  type ThemeScheme = 'light' | 'dark' | 'auto';
+  type ThemeScheme = 'light' | 'eye-care' | 'dark' | 'auto';
 
   /**
    * The layout mode

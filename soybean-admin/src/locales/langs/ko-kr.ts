@@ -60,7 +60,7 @@ const local: App.I18n.Schema = {
     tokenExpired: '요청된 토큰이 만료되었습니다'
   },
   theme: {
-    themeSchema: { title: '연락처', light: '밝은', dark: '어두운', auto: '받는 사람' },
+    themeSchema: { title: '연락처', light: '밝은', 'eye-care': 'Eye Care', dark: '어두운', auto: '받는 사람' },
     grayscale: '회색조',
     colourWeakness: '색약',
     layoutMode: {
@@ -141,6 +141,7 @@ const local: App.I18n.Schema = {
     about_help: '오류 코드 도움말',
     audit: '감사',
     user: '사용자 관리',
+    user_groups: 'User Groups',
     user_list: '사용자 목록',
     user_sessions: '세션',
     user_profile: '프로필',
@@ -150,6 +151,7 @@ const local: App.I18n.Schema = {
     system_mail: '메일 관리',
     system_server: '서버 구성',
     system_tokens: '사용자 토큰',
+    'system_access-policy': 'Access Policy',
     system_oauth: '제3자 로그인',
     audit_baselogs: '기본 로그',
     audit_filetransferlogs: '파일 전송 로그',

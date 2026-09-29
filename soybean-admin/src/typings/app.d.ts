@@ -111,6 +111,9 @@ declare namespace App {
       /** define some theme settings tokens, will transform to css variables */
       tokens: {
         light: ThemeSettingToken;
+        eyeCare?: {
+          [K in keyof ThemeSettingToken]?: Partial<ThemeSettingToken[K]>;
+        };
         dark?: {
           [K in keyof ThemeSettingToken]?: Partial<ThemeSettingToken[K]>;
         };

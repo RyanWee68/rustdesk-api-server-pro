@@ -60,7 +60,7 @@ const local: App.I18n.Schema = {
     tokenExpired: 'リクエストされたトークンが期限切れです'
   },
   theme: {
-    themeSchema: { title: '連絡先', light: 'ライト', dark: 'ダーク', auto: '送信先' },
+    themeSchema: { title: '連絡先', light: 'ライト', 'eye-care': 'Eye Care', dark: 'ダーク', auto: '送信先' },
     grayscale: 'グレースケール',
     colourWeakness: '色弱',
     layoutMode: {
@@ -141,6 +141,7 @@ const local: App.I18n.Schema = {
     about_help: 'エラーコードヘルプ',
     audit: '監査',
     user: 'ユーザー管理',
+    user_groups: 'User Groups',
     user_list: 'ユーザーリスト',
     user_sessions: 'セッション',
     user_profile: 'プロフィール',
@@ -150,6 +151,7 @@ const local: App.I18n.Schema = {
     system_mail: 'メール管理',
     system_server: 'サーバー設定',
     system_tokens: 'ユーザートークン',
+    'system_access-policy': 'Access Policy',
     system_oauth: 'サードパーティログイン',
     audit_baselogs: 'ベースログ',
     audit_filetransferlogs: 'ファイル転送ログ',

@@ -70,6 +70,7 @@ const local: App.I18n.Schema = {
       ...enUs.theme.themeSchema,
       title: 'Designschema',
       light: 'Hell',
+      'eye-care': 'Eye Care',
       dark: 'Dunkel',
       auto: 'System folgen'
     },

@@ -31,6 +31,7 @@ function handleSwitch() {
 
 const icons: Record<UnionKey.ThemeScheme, string> = {
   light: 'material-symbols:sunny',
+  'eye-care': 'material-symbols:psychiatry-rounded',
   dark: 'material-symbols:nightlight-rounded',
   auto: 'material-symbols:hdr-auto'
 };

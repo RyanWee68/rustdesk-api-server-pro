@@ -13,6 +13,7 @@ const themeStore = useThemeStore();
 
 const icons: Record<UnionKey.ThemeScheme, string> = {
   light: 'material-symbols:sunny',
+  'eye-care': 'material-symbols:psychiatry-rounded',
   dark: 'material-symbols:nightlight-rounded',
   auto: 'material-symbols:hdr-auto'
 };
@@ -40,7 +41,7 @@ const showSiderInverted = computed(() => !themeStore.darkMode && themeStore.layo
         :key="themeStore.themeScheme"
         type="segment"
         size="small"
-        class="relative w-214px"
+        class="relative w-260px"
         :value="themeStore.themeScheme"
         @update:value="handleSegmentChange"
       >

@@ -6,6 +6,7 @@ import { toggleHtmlClass } from '@/utils/common';
 import { localStg } from '@/utils/storage';
 
 const DARK_CLASS = 'dark';
+const EYE_CARE_CLASS = 'eye-care';
 
 /** Init theme settings */
 export function initThemeSettings() {
@@ -36,7 +37,7 @@ export function createThemeToken(
 ) {
   const paletteColors = createThemePaletteColors(colors, recommended);
 
-  const { light, dark } = tokens || themeSettings.tokens;
+  const { light, eyeCare, dark } = tokens || themeSettings.tokens;
 
   const themeTokens: App.Theme.ThemeTokenCSSVars = {
     colors: {
@@ -60,8 +61,22 @@ export function createThemeToken(
     }
   };
 
+  const eyeCareThemeTokens: App.Theme.ThemeTokenCSSVars = {
+    colors: {
+      ...themeTokens.colors,
+      ...themeSettings.tokens.eyeCare?.colors,
+      ...eyeCare?.colors
+    },
+    boxShadow: {
+      ...themeTokens.boxShadow,
+      ...themeSettings.tokens.eyeCare?.boxShadow,
+      ...eyeCare?.boxShadow
+    }
+  };
+
   return {
     themeTokens,
+    eyeCareThemeTokens,
     darkThemeTokens
   };
 }
@@ -130,13 +145,24 @@ function getCssVarByTokens(tokens: App.Theme.BaseToken) {
  *
  * @param tokens
  */
-export function addThemeVarsToGlobal(tokens: App.Theme.BaseToken, darkTokens: App.Theme.BaseToken) {
+export function addThemeVarsToGlobal(
+  tokens: App.Theme.BaseToken,
+  eyeCareTokens: App.Theme.BaseToken,
+  darkTokens: App.Theme.BaseToken
+) {
   const cssVarStr = getCssVarByTokens(tokens);
+  const eyeCareCssVarStr = getCssVarByTokens(eyeCareTokens);
   const darkCssVarStr = getCssVarByTokens(darkTokens);
 
   const css = `
     :root {
       ${cssVarStr}
+    }
+  `;
+
+  const eyeCareCss = `
+    html.${EYE_CARE_CLASS} {
+      ${eyeCareCssVarStr}
     }
   `;
 
@@ -152,7 +178,7 @@ export function addThemeVarsToGlobal(tokens: App.Theme.BaseToken, darkTokens: Ap
 
   style.id = styleId;
 
-  style.textContent = css + darkCss;
+  style.textContent = css + eyeCareCss + darkCss;
 
   document.head.appendChild(style);
 }
@@ -166,6 +192,21 @@ export function toggleCssDarkMode(darkMode = false) {
   const { add, remove } = toggleHtmlClass(DARK_CLASS);
 
   if (darkMode) {
+    add();
+  } else {
+    remove();
+  }
+}
+
+/**
+ * Toggle css eye-care mode
+ *
+ * @param eyeCareMode Is eye-care mode
+ */
+export function toggleCssEyeCareMode(eyeCareMode = false) {
+  const { add, remove } = toggleHtmlClass(EYE_CARE_CLASS);
+
+  if (eyeCareMode) {
     add();
   } else {
     remove();

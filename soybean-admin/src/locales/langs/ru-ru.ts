@@ -60,7 +60,7 @@ const local: App.I18n.Schema = {
     tokenExpired: 'Запрошенный токен истёк'
   },
   theme: {
-    themeSchema: { title: 'Контакты', light: 'Светлая', dark: 'Темная', auto: 'Кому' },
+    themeSchema: { title: 'Контакты', light: 'Светлая', 'eye-care': 'Eye Care', dark: 'Темная', auto: 'Кому' },
     grayscale: 'Оттенки серого',
     colourWeakness: 'Слабость цвета',
     layoutMode: {
@@ -141,6 +141,7 @@ const local: App.I18n.Schema = {
     about_help: 'Справка по кодам ошибок',
     audit: 'Аудит',
     user: 'Управление пользователями',
+    user_groups: 'User Groups',
     user_list: 'Список пользователей',
     user_sessions: 'Сеансы',
     user_profile: 'Профиль',
@@ -150,6 +151,7 @@ const local: App.I18n.Schema = {
     system_mail: 'Управление почтой',
     system_server: 'Конфигурация сервера',
     system_tokens: 'Токены пользователей',
+    'system_access-policy': 'Access Policy',
     system_oauth: 'Вход через третьих лиц',
     audit_baselogs: 'Базовые журналы',
     audit_filetransferlogs: 'Журналы передачи файлов',

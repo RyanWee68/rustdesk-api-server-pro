@@ -66,7 +66,14 @@ const local: App.I18n.Schema = {
   },
   theme: {
     ...enUs.theme,
-    themeSchema: { ...enUs.theme.themeSchema, title: '主题方案', light: '亮色', dark: '暗色', auto: '跟随系统' },
+    themeSchema: {
+      ...enUs.theme.themeSchema,
+      title: '主题方案',
+      light: '白天模式',
+      'eye-care': '护眼模式',
+      dark: '暗色',
+      auto: '跟随系统'
+    },
     grayscale: '灰度模式',
     colourWeakness: '色弱模式',
     layoutMode: {

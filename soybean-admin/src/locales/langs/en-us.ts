@@ -60,7 +60,7 @@ const local: App.I18n.Schema = {
     tokenExpired: 'The requested token has expired'
   },
   theme: {
-    themeSchema: { title: 'Theme Schema', light: 'Light', dark: 'Dark', auto: 'Follow System' },
+    themeSchema: { title: 'Theme Schema', light: 'Light', 'eye-care': 'Eye Care', dark: 'Dark', auto: 'Follow System' },
     grayscale: 'Grayscale',
     colourWeakness: 'Colour Weakness',
     layoutMode: {

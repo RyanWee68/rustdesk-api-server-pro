@@ -60,7 +60,7 @@ const local: App.I18n.Schema = {
     tokenExpired: 'El token solicitado ha expirado'
   },
   theme: {
-    themeSchema: { title: 'Contactos', light: 'Claro', dark: 'Oscuro', auto: 'Para' },
+    themeSchema: { title: 'Contactos', light: 'Claro', 'eye-care': 'Eye Care', dark: 'Oscuro', auto: 'Para' },
     grayscale: 'Escala de grises',
     colourWeakness: 'Debilidad de color',
     layoutMode: {
@@ -141,6 +141,7 @@ const local: App.I18n.Schema = {
     about_help: 'Ayuda de códigos de error',
     audit: 'Auditoría',
     user: 'Gestión de usuarios',
+    user_groups: 'User Groups',
     user_list: 'Lista de usuarios',
     user_sessions: 'Sesiones',
     user_profile: 'Perfil',
@@ -150,6 +151,7 @@ const local: App.I18n.Schema = {
     system_mail: 'Gestión de correo',
     system_server: 'Configuración del servidor',
     system_tokens: 'Tokens de usuario',
+    'system_access-policy': 'Access Policy',
     system_oauth: 'Inicio de sesión de terceros',
     audit_baselogs: 'Registros base',
     audit_filetransferlogs: 'Registros de transferencia de archivos',

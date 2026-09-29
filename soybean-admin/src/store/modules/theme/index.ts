@@ -11,7 +11,8 @@ import {
   getNaiveTheme,
   initThemeSettings,
   toggleAuxiliaryColorModes,
-  toggleCssDarkMode
+  toggleCssDarkMode,
+  toggleCssEyeCareMode
 } from './shared';
 
 /** Theme store */
@@ -29,6 +30,9 @@ export const useThemeStore = defineStore(SetupStoreId.Theme, () => {
     }
     return settings.value.themeScheme === 'dark';
   });
+
+  /** Eye-care mode */
+  const eyeCareMode = computed(() => settings.value.themeScheme === 'eye-care');
 
   /** grayscale mode */
   const grayscaleMode = computed(() => settings.value.grayscale);
@@ -129,7 +133,7 @@ export const useThemeStore = defineStore(SetupStoreId.Theme, () => {
 
   /** Toggle theme scheme */
   function toggleThemeScheme() {
-    const themeSchemes: UnionKey.ThemeScheme[] = ['light', 'dark', 'auto'];
+    const themeSchemes: UnionKey.ThemeScheme[] = ['light', 'eye-care', 'dark', 'auto'];
 
     const index = themeSchemes.findIndex(item => item === settings.value.themeScheme);
 
@@ -173,12 +177,12 @@ export const useThemeStore = defineStore(SetupStoreId.Theme, () => {
 
   /** Setup theme vars to global */
   function setupThemeVarsToGlobal() {
-    const { themeTokens, darkThemeTokens } = createThemeToken(
+    const { themeTokens, eyeCareThemeTokens, darkThemeTokens } = createThemeToken(
       themeColors.value,
       settings.value.tokens,
       settings.value.recommendColor
     );
-    addThemeVarsToGlobal(themeTokens, darkThemeTokens);
+    addThemeVarsToGlobal(themeTokens, eyeCareThemeTokens, darkThemeTokens);
   }
   /**
    * Set layout reverse horizontal mix
@@ -210,6 +214,14 @@ export const useThemeStore = defineStore(SetupStoreId.Theme, () => {
       darkMode,
       val => {
         toggleCssDarkMode(val);
+      },
+      { immediate: true }
+    );
+
+    watch(
+      eyeCareMode,
+      val => {
+        toggleCssEyeCareMode(val);
       },
       { immediate: true }
     );
@@ -300,6 +312,7 @@ export const useThemeStore = defineStore(SetupStoreId.Theme, () => {
   return {
     ...toRefs(settings.value),
     darkMode,
+    eyeCareMode,
     themeColors,
     naiveTheme,
     settingsJson,

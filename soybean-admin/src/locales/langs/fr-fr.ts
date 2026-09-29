@@ -74,6 +74,7 @@ const local: App.I18n.Schema = {
       ...enUs.theme.themeSchema,
       title: 'Schéma de thème',
       light: 'Clair',
+      'eye-care': 'Eye Care',
       dark: 'Sombre',
       auto: 'Suivre le système'
     },
