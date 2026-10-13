@@ -24,6 +24,7 @@ declare module "@elegant-router/types" {
     "about_help": "/about/help";
     "about_version": "/about/version";
     "audit": "/audit";
+    "audit_admissionlogs": "/audit/admissionlogs";
     "audit_baselogs": "/audit/baselogs";
     "audit_error-logs": "/audit/error-logs";
     "audit_filetransferlogs": "/audit/filetransferlogs";
@@ -123,6 +124,7 @@ declare module "@elegant-router/types" {
     | "login"
     | "about_help"
     | "about_version"
+    | "audit_admissionlogs"
     | "audit_baselogs"
     | "audit_error-logs"
     | "audit_filetransferlogs"

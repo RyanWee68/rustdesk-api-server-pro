@@ -1,0 +1,61 @@
+ARG RUSTDESK_CONTROLLED_SERVER_IMAGE=rustdesk-controlled-server:must-provide
+FROM golang:1.25-alpine AS golang
+WORKDIR /backend
+ENV CGO_ENABLED=0
+ARG GO_MODULE_PROXY=https://proxy.golang.org
+ARG APP_VERSION=latest
+ARG BUILD_TIME=""
+ENV APP_VERSION=$APP_VERSION
+ENV BUILD_TIME=$BUILD_TIME
+COPY ./backend .
+RUN GOPROXY="$GO_MODULE_PROXY" go build -ldflags "-X main.appVersion=${APP_VERSION} -X main.buildTime=${BUILD_TIME}"
+
+FROM node:22-alpine AS node
+WORKDIR /frontend
+ARG APP_VERSION=latest
+ARG BUILD_TIME=""
+ENV VITE_APP_VERSION=$APP_VERSION
+ENV VITE_BUILD_TIME=$BUILD_TIME
+COPY ./soybean-admin .
+RUN rm -rf node_modules
+RUN npm install -g pnpm@9
+RUN pnpm install --frozen-lockfile && pnpm build
+
+# 该阶段必须指向已经改造过的 rustdesk-server 镜像。
+# 镜像内需提供 /usr/local/bin/hbbs 和 /usr/local/bin/hbbr。
+FROM ${RUSTDESK_CONTROLLED_SERVER_IMAGE} AS rustdesk-server
+
+FROM debian:bookworm-slim AS runtime-base
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends tzdata ca-certificates wget libc-bin libsodium23 libsqlite3-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+FROM runtime-base AS controlled-smoke
+ENV PORT=12345
+ENV ADMIN_PORT=12346
+ENV MUST_LOGIN=1
+ENV RUSTDESK_HBBS_DIR=/app/rustdesk-server
+ENV HBBS_BIN=/usr/local/bin/hbbs
+ENV HBBR_BIN=/usr/local/bin/hbbr
+ARG APP_VERSION=latest
+ARG BUILD_TIME=""
+ENV APP_VERSION=$APP_VERSION
+ENV BUILD_TIME=$BUILD_TIME
+WORKDIR /app
+COPY ./docker/controlled-entrypoint.sh /app/controlled-entrypoint.sh
+COPY ./docker/controlled-healthcheck.sh /app/controlled-healthcheck.sh
+COPY ./scripts/deploy/update-rustdesk-api.sh /usr/local/share/rustdesk-api-server-pro/update-container.sh
+COPY --from=golang /backend/rustdesk-api-server-pro /app/rustdesk-api-server-pro
+COPY ./templates/controlled-server.yaml /app/server.yaml
+COPY --from=node /frontend/dist /app/dist
+COPY --from=rustdesk-server /usr/local/bin/hbbs /usr/local/bin/hbbs
+COPY --from=rustdesk-server /usr/local/bin/hbbr /usr/local/bin/hbbr
+RUN chmod +x /app/controlled-entrypoint.sh /app/controlled-healthcheck.sh /usr/local/bin/hbbs /usr/local/bin/hbbr
+EXPOSE 12345 12346 21115/tcp 21116/tcp 21116/udp 21117/tcp 21118/tcp 21119/tcp
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 CMD [ "sh", "/app/controlled-healthcheck.sh" ]
+CMD [ "sh", "/app/controlled-entrypoint.sh" ]
+
+FROM controlled-smoke AS production
+RUN ldd /usr/local/bin/hbbs && ldd /usr/local/bin/hbbr \
+    && ! ldd /usr/local/bin/hbbs | grep -q 'not found' \
+    && ! ldd /usr/local/bin/hbbr | grep -q 'not found'

@@ -1,0 +1,12 @@
+ARG RUSTDESK_CONTROLLED_IMAGE=rustdesk-controlled-all:must-provide
+FROM ${RUSTDESK_CONTROLLED_IMAGE}
+
+# 复用同版后端、前端和配置模板，仅启动 API，避免重复编译。
+ENV CONTROLLED_API_ONLY=1
+COPY ./docker/controlled-entrypoint.sh /app/controlled-entrypoint.sh
+COPY ./docker/controlled-healthcheck.sh /app/controlled-healthcheck.sh
+RUN test -x /app/rustdesk-api-server-pro \
+    && test -s /app/server.yaml \
+    && rm -f /usr/local/bin/hbbs /usr/local/bin/hbbr
+HEALTHCHECK --interval=5s --timeout=3s --start-period=30s --retries=12 CMD [ "sh", "/app/controlled-healthcheck.sh" ]
+CMD [ "sh", "/app/controlled-entrypoint.sh" ]

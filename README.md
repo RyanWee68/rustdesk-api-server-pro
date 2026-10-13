@@ -16,18 +16,28 @@ RustDesk API Server Pro 是一个面向 RustDesk 客户端的第三方 API 服�
 - 默认数据库：SQLite；可切换为 MySQL。
 - 管理后台：基于 Vue 3、Vite、TypeScript、Naive UI 和 UnoCSS。
 - 后端框架：Go + Iris + Xorm。
+- 受控 RustDesk 准入：API 侧、后台审批、策略和审计能力已实现；真正阻断客户端绕过仍需要接入改造版 `hbbs/hbbr`。
 
 ## 主要能力
 
 - RustDesk 客户端 API 兼容层：登录选项、WebAuth 轮询、设备同步、地址簿、心跳、sysinfo、基础配置探测等。
 - 管理后台：用户、设备、系统配置、访问策略、第三方登录、审计日志、错误日志、邮件模板、会话和令牌管理。
 - 用户门户：普通用户可查看自己的设备、会话、通讯录和个人资料。
+- 受控 RustDesk 准入 PoC：
+  - 已实现 `/internal/rustdesk/auth`、`/device/register`、`/device/heartbeat`、`/relay/check` 内部接口。
+  - 内部接口支持 `X-Internal-Secret` 和 `Authorization: Bearer <secret>`。
+  - 设备支持待审批、已通过、已拒绝、已禁用状态。
+  - 用户支持远控权限、中继权限和授权到期策略。
+  - 后台支持设备审批、拒绝、禁用、启用和中继开关。
+  - 日志审计中提供准入日志页面，可查看脱敏后的准入请求/响应摘要。
 - 地址簿增强：账户级联系人/标签全量视图、共享地址簿、CSV 导入导出、普通用户写权限校验。
 - OAuth/OIDC：统一回调 `/admin/auth/oauth/{provider}/callback`，支持后台登录和客户端登录共用链路。
 - 已适配 Provider：GitHub、QQ、Google、Microsoft、Gitee、GitLab、WeChat、Apple 和通用 OIDC。
 - WebAuthn/Passkey：作为后台登录的可选能力，独立于 RustDesk 客户端认证回传。
 - 国际化：中文、英文及多语言翻译质量检查脚本。
 - Docker 镜像：内置管理后台静态文件，无需再部署独立 `rustdesk-web` 前端容器。
+
+> 受控准入说明：当前仓库已经完成 API 侧准入、后台管理和审计闭环；若要让“未注册或未审批设备无法连入 RustDesk 服务”真正生效，还必须使用会调用这些内部接口的改造版 `hbbs/hbbr`。官方未改造 `rustdesk-server` 不会自动调用本项目的准入接口。
 
 ## 架构概览
 
@@ -163,6 +173,14 @@ httpConfig:
 
 oauth:
   providers: []
+
+rustdeskServer:
+  idServer: ""
+  relayServer: ""
+  apiServer: ""
+  key: ""
+  internalSecret: ""
+  authCacheSeconds: 60
 ```
 
 配置要点：
@@ -174,6 +192,36 @@ oauth:
 - SQLite 数据库、运行配置、初始化标记和录屏上传目录建议全部持久化到 `/app/data`。
 - MySQL 可通过切换 `db.driver` 与 `db.dsn` 启用。
 - 反向代理环境建议正确传递 `X-Forwarded-Proto` 和 `X-Forwarded-Host`。
+- `rustdeskServer.internalSecret` 用于改造版 `hbbs/hbbr` 调用内部准入接口，生产环境必须使用不少于 32 字符的随机密钥。
+- `rustdeskServer.authCacheSeconds` 是 RustDesk 服务端可使用的授权缓存时间，建议 30 到 120 秒。
+
+## 受控 RustDesk 准入 PoC
+
+当前已完成 API 侧最小闭环：
+
+- 设备注册后默认进入待审批状态。
+- 审批通过后准入接口可返回允许。
+- 禁用用户、禁用设备、关闭用户远控权限、授权过期会拒绝连接。
+- 设备和用户任一侧禁止中继时，中继校验会拒绝。
+- 内部准入接口会写入操作审计，准入日志页面可按设备 ID、动作、结果、错误码和时间筛选。
+
+相关文件：
+
+- 受控部署计划：[`docs/CONTROLLED_RUSTDESK_DEPLOYMENT_PLAN.md`](./docs/CONTROLLED_RUSTDESK_DEPLOYMENT_PLAN.md)
+- PoC 接入说明：[`docs/CONTROLLED_RUSTDESK_POC.md`](./docs/CONTROLLED_RUSTDESK_POC.md)
+- 基线与风险清单：[`docs/CONTROLLED_RUSTDESK_BASELINE_AND_RISKS.md`](./docs/CONTROLLED_RUSTDESK_BASELINE_AND_RISKS.md)
+- 密钥轮换说明：[`docs/CONTROLLED_RUSTDESK_KEY_ROTATION.md`](./docs/CONTROLLED_RUSTDESK_KEY_ROTATION.md)
+- 受控 Compose 示例：[`docker-compose.controlled.yaml`](./docker-compose.controlled.yaml)
+
+部署前可运行预检脚本：
+
+```bash
+export RUSTDESK_API_INTERNAL_SECRET="<至少 32 字符随机密钥>"
+export RUSTDESK_CONTROLLED_SERVER_IMAGE="<改造版 rustdesk-server 镜像>"
+scripts/deploy/controlled-preflight.sh .
+```
+
+注意：受控 Compose 示例要求 `RUSTDESK_CONTROLLED_SERVER_IMAGE` 是改造版 `rustdesk-server` 镜像。若使用官方未改造镜像，只能启动服务，不能证明注册制在协议层生效。
 
 ## 登录与 OAuth
 

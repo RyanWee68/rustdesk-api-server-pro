@@ -17,6 +17,7 @@ type AuditController struct {
 
 func (c *AuditController) BeforeActivation(b mvc.BeforeActivation) {
 	b.Handle("GET", "/audit/list", "HandleList")
+	b.Handle("GET", "/audit/admission-list", "HandleAdmissionList")
 	b.Handle("GET", "/audit/file-transfer-list", "HandleFileTransferList")
 	b.Handle("DELETE", "/audit/clear", "HandleClear")
 	b.Handle("DELETE", "/audit/file-transfer-clear", "HandleFileTransferClear")
@@ -84,6 +85,72 @@ func (c *AuditController) HandleList() mvc.Result {
 			"uuid":        a.Uuid,
 			"type":        a.Type,
 			"created_at":  a.CreatedAt.Format(config.TimeFormat),
+		})
+	}
+	return c.Success(iris.Map{
+		"total":   pagination.TotalCount,
+		"records": list,
+		"current": currentPage,
+		"size":    pageSize,
+	}, "ok")
+}
+
+func (c *AuditController) HandleAdmissionList() mvc.Result {
+	user := c.GetUser()
+	if user == nil || !user.IsAdmin {
+		return c.Error(nil, errcode.New(errcode.ERR1010.Code, errcode.ERR1010.Message).Error())
+	}
+
+	currentPage := c.Ctx.URLParamIntDefault("current", 1)
+	pageSize := c.Ctx.URLParamIntDefault("size", 10)
+	action := c.Ctx.URLParamDefault("action", "")
+	rustdeskID := c.Ctx.URLParamDefault("rustdesk_id", "")
+	result := c.Ctx.URLParamDefault("result", "")
+	code := c.Ctx.URLParamDefault("code", "")
+	createdAt0 := c.Ctx.URLParamDefault("created_at[0]", "")
+	createdAt1 := c.Ctx.URLParamDefault("created_at[1]", "")
+
+	query := func() *xorm.Session {
+		q := c.Db.Table(&model.OperationAudit{}).Where("resource_type = ?", "rustdesk_admission")
+		if action != "" {
+			q.Where("action = ?", action)
+		}
+		if rustdeskID != "" {
+			q.Where("resource_id LIKE ?", "%"+rustdeskID+"%")
+		}
+		if result != "" {
+			q.Where("result = ?", result)
+		}
+		if code != "" {
+			q.Where("error_message = ?", code)
+		}
+		if createdAt0 != "" && createdAt1 != "" {
+			q.Where("created_at BETWEEN ? AND ?", createdAt0, createdAt1)
+		}
+		q.Desc("id")
+		return q
+	}
+
+	pagination := db.NewPagination(currentPage, pageSize)
+	auditList := make([]model.OperationAudit, 0)
+	if err := pagination.Paginate(query, &model.OperationAudit{}, &auditList); err != nil {
+		return c.dbError(err)
+	}
+
+	list := make([]iris.Map, 0, len(auditList))
+	for _, a := range auditList {
+		list = append(list, iris.Map{
+			"id":            a.Id,
+			"action":        a.Action,
+			"rustdesk_id":   a.ResourceId,
+			"request":       a.BeforeData,
+			"response":      a.AfterData,
+			"ip":            a.IP,
+			"user_agent":    a.UserAgent,
+			"result":        a.Result,
+			"code":          a.ErrorMessage,
+			"error_message": a.ErrorMessage,
+			"created_at":    a.CreatedAt.Format(config.TimeFormat),
 		})
 	}
 	return c.Success(iris.Map{

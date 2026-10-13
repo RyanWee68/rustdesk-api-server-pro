@@ -18,6 +18,9 @@ type User struct {
 	TwoFactorAuthSecret string    `xorm:"'tfa_secret' varchar(255)"`  // 2fa key
 	Note                string    `xorm:"'note' varchar(255)"`
 	LicensedDevices     int       `xorm:"'licensed_devices' int"`
+	AllowRemoteAccess   bool      `xorm:"'allow_remote_access' tinyint default 1"`
+	AllowRelay          bool      `xorm:"'allow_relay' tinyint default 1"`
+	AuthorizedUntil     time.Time `xorm:"'authorized_until' datetime"`
 	Status              int       `xorm:"'status' tinyint"` // 0=disabled,1=normal,-1=unverified
 	IsAdmin             bool      `xorm:"'is_admin' tinyint"`
 	CreatedAt           time.Time `xorm:"'created_at' datetime created"`

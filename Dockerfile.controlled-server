@@ -1,0 +1,31 @@
+FROM rust:1.99-bookworm AS build
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        clang git libclang-dev libsodium-dev libsqlite3-dev pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+COPY patches/rustdesk-server/a7736be5-controlled.patch /controlled/patches/rustdesk-server/a7736be5-controlled.patch
+COPY scripts/deploy/controlled-fork-apply.sh /controlled/scripts/deploy/controlled-fork-apply.sh
+
+RUN git init /src/rustdesk-server \
+    && git -C /src/rustdesk-server remote add origin https://github.com/rustdesk/rustdesk-server.git \
+    && git -C /src/rustdesk-server fetch --depth 1 origin a7736be5e40f85bfc141120dce587e836e5d4b80 \
+    && git -C /src/rustdesk-server checkout --detach FETCH_HEAD \
+    && git -C /src/rustdesk-server submodule update --init --depth 1 libs/hbb_common \
+    && sh /controlled/scripts/deploy/controlled-fork-apply.sh /src/rustdesk-server
+
+WORKDIR /src/rustdesk-server
+ARG CARGO_BUILD_JOBS=2
+RUN cargo build --jobs "$CARGO_BUILD_JOBS" --locked --release --bin hbbs --bin hbbr
+
+FROM debian:bookworm-slim
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates libc-bin libsodium23 libsqlite3-0 \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=build /src/rustdesk-server/target/release/hbbs /usr/local/bin/hbbs
+COPY --from=build /src/rustdesk-server/target/release/hbbr /usr/local/bin/hbbr
+RUN ldd /usr/local/bin/hbbs && ldd /usr/local/bin/hbbr \
+    && ! ldd /usr/local/bin/hbbs | grep -q 'not found' \
+    && ! ldd /usr/local/bin/hbbr | grep -q 'not found'

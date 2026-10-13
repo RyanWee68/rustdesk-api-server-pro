@@ -175,6 +175,7 @@ const local: App.I18n.Schema = {
     system_tokens: '用户Token',
     'system_access-policy': '准入策略',
     system_oauth: '第三方登录',
+    audit_admissionlogs: '准入日志',
     audit_baselogs: '基础日志',
     audit_filetransferlogs: '文件传输日志',
     audit_loginlogs: '登录日志',
@@ -507,6 +508,10 @@ const local: App.I18n.Schema = {
       name: '昵称',
       email: '邮箱',
       licensed_devices: '授权设备数',
+      allow_remote_access: '允许远控',
+      allow_relay: '允许中继',
+      authorized_until: '授权到期',
+      remote_policy: '远控策略',
       login_verify: '登录验证',
       status: '状态',
       is_admin: '管理员',
@@ -556,6 +561,13 @@ const local: App.I18n.Schema = {
         controlled_master: '被控端 -> 控制端'
       }
     },
+      admissionAudit: {
+        action: '动作',
+        result: '结果',
+        code: '错误码',
+        request: '请求摘要',
+        response: '响应摘要'
+      },
     mailTemplate: {
       ...enUs.dataMap.mailTemplate,
       name: '名称',

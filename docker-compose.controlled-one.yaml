@@ -1,0 +1,43 @@
+services:
+  rustdesk-controlled:
+    container_name: rustdesk-api-server-pro-controlled
+    build:
+      context: .
+      dockerfile: Dockerfile.controlled
+      args:
+        RUSTDESK_CONTROLLED_SERVER_IMAGE: ${RUSTDESK_CONTROLLED_SERVER_IMAGE:?set RUSTDESK_CONTROLLED_SERVER_IMAGE}
+        GO_MODULE_PROXY: ${GO_MODULE_PROXY:-https://proxy.golang.org}
+        APP_VERSION: ${APP_VERSION:-latest}
+        BUILD_TIME: ${BUILD_TIME:-}
+    image: ${RUSTDESK_CONTROLLED_IMAGE:-rustdesk-api-server-pro-controlled:local}
+    environment:
+      - "ADMIN_USER=${ADMIN_USER:?set initial admin user}"
+      - "ADMIN_PASS=${ADMIN_PASS:?set initial admin password}"
+      - "PORT=12345"
+      - "ADMIN_PORT=12346"
+      - "MUST_LOGIN=1"
+      - "API_SERVER=http://127.0.0.1:12345"
+      - "RUSTDESK_API_INTERNAL_SECRET=${RUSTDESK_API_INTERNAL_SECRET:?set RUSTDESK_API_INTERNAL_SECRET}"
+      - "API_INTERNAL_SECRET=${RUSTDESK_API_INTERNAL_SECRET:?set RUSTDESK_API_INTERNAL_SECRET}"
+      - "RUSTDESK_AUTH_CACHE_SECONDS=${RUSTDESK_AUTH_CACHE_SECONDS:-60}"
+      - "AUTH_CACHE_SECONDS=${RUSTDESK_AUTH_CACHE_SECONDS:-60}"
+      - "API_TIMEOUT_SECONDS=${RUSTDESK_API_TIMEOUT_SECONDS:-3}"
+      - "RUSTDESK_KEY_DIR=/app/rustdesk-server"
+    ports:
+      - "${FNOS_HTTP_PORT:-12345}:12345"
+      - "${FNOS_ADMIN_HTTP_BIND:-127.0.0.1}:${FNOS_ADMIN_HTTP_PORT:-12346}:12346"
+      - "${RUSTDESK_HBBS_TCP_21115:-21115}:21115/tcp"
+      - "${RUSTDESK_HBBS_TCP_21116:-21116}:21116/tcp"
+      - "${RUSTDESK_HBBS_UDP_21116:-21116}:21116/udp"
+      - "${RUSTDESK_HBBR_TCP_21117:-21117}:21117/tcp"
+      - "${RUSTDESK_HBBS_TCP_21118:-127.0.0.1:21118}:21118/tcp"
+      - "${RUSTDESK_HBBR_TCP_21119:-127.0.0.1:21119}:21119/tcp"
+    volumes:
+      - ./data:/app/data
+      - rustdesk-server-key:/app/rustdesk-server
+      - rustdesk-controlled-logs:/app/logs
+    restart: unless-stopped
+
+volumes:
+  rustdesk-server-key:
+  rustdesk-controlled-logs:

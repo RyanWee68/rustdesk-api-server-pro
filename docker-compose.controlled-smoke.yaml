@@ -1,0 +1,27 @@
+# 独立测试资源，不绑定宿主端口、不挂载正式配置或数据。
+services:
+  rustdesk-controlled:
+    build:
+      context: .
+      dockerfile: Dockerfile.controlled
+      target: controlled-smoke
+      args:
+        RUSTDESK_CONTROLLED_SERVER_IMAGE: ${RUSTDESK_CONTROLLED_SERVER_IMAGE:?required}
+        GO_MODULE_PROXY: ${GO_MODULE_PROXY:-https://proxy.golang.org}
+    image: ${RUSTDESK_CONTROLLED_IMAGE:?required}
+    environment:
+      ADMIN_USER: ${ADMIN_USER:?required}
+      ADMIN_PASS: ${ADMIN_PASS:?required}
+      MUST_LOGIN: "1"
+      RUSTDESK_API_INTERNAL_SECRET: ${RUSTDESK_API_INTERNAL_SECRET:?required}
+      API_INTERNAL_SECRET: ${RUSTDESK_API_INTERNAL_SECRET:?required}
+      API_SERVER: http://127.0.0.1:12345
+    volumes:
+      - smoke-data:/app/data
+      - smoke-keys:/app/rustdesk-server
+      - smoke-logs:/app/logs
+    restart: "no"
+volumes:
+  smoke-data:
+  smoke-keys:
+  smoke-logs:

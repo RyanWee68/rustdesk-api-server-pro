@@ -718,6 +718,10 @@ declare namespace App {
           name: string;
           email: string;
           licensed_devices: string;
+          allow_remote_access: string;
+          allow_relay: string;
+          authorized_until: string;
+          remote_policy: string;
           login_verify: string;
           status: string;
           is_admin: string;
@@ -798,6 +802,13 @@ declare namespace App {
           };
           peer_id: string;
           path: string;
+        };
+        admissionAudit: {
+          action: string;
+          result: string;
+          code: string;
+          request: string;
+          response: string;
         };
         mailTemplate: {
           name: string;

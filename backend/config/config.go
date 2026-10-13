@@ -46,10 +46,12 @@ type WebAuthnConfig struct {
 }
 
 type RustdeskServerConfig struct {
-	IdServer    string `yaml:"idServer"`
-	RelayServer string `yaml:"relayServer"`
-	ApiServer   string `yaml:"apiServer"`
-	Key         string `yaml:"key"`
+	IdServer         string `yaml:"idServer"`
+	RelayServer      string `yaml:"relayServer"`
+	ApiServer        string `yaml:"apiServer"`
+	Key              string `yaml:"key"`
+	InternalSecret   string `yaml:"internalSecret"`
+	AuthCacheSeconds int    `yaml:"authCacheSeconds"`
 }
 
 type DbConfig struct {
@@ -194,6 +196,9 @@ func GetDefaultServerConfig() *ServerConfig {
 		WebAuthn: &WebAuthnConfig{
 			Enabled: true,
 			RPName:  "RustDesk API Server Pro",
+		},
+		RustdeskServer: &RustdeskServerConfig{
+			AuthCacheSeconds: 60,
 		},
 		AccessPolicy: &AccessPolicyConfig{
 			RegistrationMode:     "admin_only",

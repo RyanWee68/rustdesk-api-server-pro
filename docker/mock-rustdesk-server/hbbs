@@ -1,0 +1,35 @@
+#!/bin/sh
+
+set -eu
+
+if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+    cat <<'HELP'
+mock hbbs for controlled deployment lifecycle tests
+
+This binary is only a placeholder used to validate Dockerfile, entrypoint,
+healthcheck and Compose startup. It does not implement RustDesk protocol.
+HELP
+    exit 0
+fi
+
+if [ "${MUST_LOGIN:-}" != "1" ] && [ "${MUST_LOGIN:-}" != "true" ]; then
+    printf 'ERR-2399 mock hbbs requires MUST_LOGIN=1\n' >&2
+    exit 1
+fi
+
+if [ -z "${API_SERVER:-}" ] || [ -z "${API_INTERNAL_SECRET:-}" ]; then
+    printf 'ERR-2399 mock hbbs requires API_SERVER and API_INTERNAL_SECRET\n' >&2
+    exit 1
+fi
+
+key_dir="${RUSTDESK_KEY_DIR:-/data}"
+mkdir -p "$key_dir"
+printf 'mock-hbbs-key\n' > "$key_dir/mock_hbbs_key"
+
+printf 'mock hbbs started: api=%s cache=%s key_dir=%s\n' "$API_SERVER" "${AUTH_CACHE_SECONDS:-}" "$key_dir"
+
+trap 'printf "mock hbbs stopping\n"; exit 0' INT TERM
+while :; do
+    sleep 30 &
+    wait $!
+done

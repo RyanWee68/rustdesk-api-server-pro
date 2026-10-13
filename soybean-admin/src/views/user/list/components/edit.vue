@@ -49,6 +49,9 @@ type Model = Pick<
   | 'name'
   | 'email'
   | 'licensed_devices'
+  | 'allow_remote_access'
+  | 'allow_relay'
+  | 'authorized_until'
   | 'login_verify'
   | 'tfa_secret'
   | 'note'
@@ -68,6 +71,9 @@ function createDefaultModel(): Model {
     name: '',
     email: '',
     licensed_devices: 0,
+    allow_remote_access: true,
+    allow_relay: true,
+    authorized_until: '',
     login_verify: 'access_token',
     tfa_secret: '',
     note: '',
@@ -190,6 +196,26 @@ watch(visible, () => {
         </NFormItem>
         <NFormItem :label="$t('dataMap.user.licensed_devices')" path="licensed_devices">
           <NInputNumber v-model:value="model.licensed_devices" />
+        </NFormItem>
+        <NFormItem :label="$t('dataMap.user.allow_remote_access')" path="allow_remote_access">
+          <NSwitch v-model:value="model.allow_remote_access">
+            <template #checked>{{ $t('common.yesOrNo.yes') }}</template>
+            <template #unchecked>{{ $t('common.yesOrNo.no') }}</template>
+          </NSwitch>
+        </NFormItem>
+        <NFormItem :label="$t('dataMap.user.allow_relay')" path="allow_relay">
+          <NSwitch v-model:value="model.allow_relay">
+            <template #checked>{{ $t('common.yesOrNo.yes') }}</template>
+            <template #unchecked>{{ $t('common.yesOrNo.no') }}</template>
+          </NSwitch>
+        </NFormItem>
+        <NFormItem :label="$t('dataMap.user.authorized_until')" path="authorized_until">
+          <NDatePicker
+            v-model:formatted-value="model.authorized_until"
+            type="datetime"
+            value-format="yyyy-MM-dd HH:mm:ss"
+            clearable
+          />
         </NFormItem>
         <NFormItem
           v-if="!(operateType === 'edit' && model.is_admin)"

@@ -87,6 +87,17 @@ export const generatedRoutes: GeneratedRoute[] = [
     },
     children: [
       {
+        name: 'audit_admissionlogs',
+        path: '/audit/admissionlogs',
+        component: 'view.audit_admissionlogs',
+        meta: {
+          title: 'audit_admissionlogs',
+          i18nKey: 'route.audit_admissionlogs',
+          icon: 'mdi:shield-check-outline',
+          roles: ['R_SUPER']
+        }
+      },
+      {
         name: 'audit_baselogs',
         path: '/audit/baselogs',
         component: 'view.audit_baselogs',

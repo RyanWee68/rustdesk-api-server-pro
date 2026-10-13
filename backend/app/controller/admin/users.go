@@ -2,6 +2,8 @@ package admin
 
 import (
 	"encoding/json"
+	"time"
+
 	"rustdesk-api-server-pro/app/form/admin"
 	"rustdesk-api-server-pro/app/model"
 	"rustdesk-api-server-pro/config"
@@ -75,17 +77,20 @@ func (c *UsersController) HandleList() mvc.Result {
 	list := make([]iris.Map, 0)
 	for _, u := range userList {
 		list = append(list, iris.Map{
-			"id":               u.Id,
-			"username":         u.Username,
-			"name":             u.Name,
-			"email":            u.Email,
-			"licensed_devices": u.LicensedDevices,
-			"note":             u.Note,
-			"login_verify":     u.LoginVerify,
-			"has_2fa":          u.TwoFactorAuthSecret != "",
-			"status":           u.Status,
-			"is_admin":         u.IsAdmin,
-			"created_at":       u.CreatedAt.Format(config.TimeFormat),
+			"id":                  u.Id,
+			"username":            u.Username,
+			"name":                u.Name,
+			"email":               u.Email,
+			"licensed_devices":    u.LicensedDevices,
+			"allow_remote_access": u.AllowRemoteAccess,
+			"allow_relay":         u.AllowRelay,
+			"authorized_until":    formatUserPolicyTime(u.AuthorizedUntil),
+			"note":                u.Note,
+			"login_verify":        u.LoginVerify,
+			"has_2fa":             u.TwoFactorAuthSecret != "",
+			"status":              u.Status,
+			"is_admin":            u.IsAdmin,
+			"created_at":          u.CreatedAt.Format(config.TimeFormat),
 		})
 	}
 	return c.Success(iris.Map{
@@ -128,6 +133,11 @@ func (c *UsersController) HandleAdd() mvc.Result {
 	if form.LicensedDevices < 0 {
 		form.LicensedDevices = 0
 	}
+	authorizedUntil, err := form.AuthorizedUntilTime()
+	if err != nil {
+		c.recordUserOperationAudit("admin_user_add", form.Username, nil, sanitizeUserFormForAudit(form), "failure", err.Error())
+		return c.dbError(err)
+	}
 
 	p, err := util.Password(form.Password)
 	if err != nil {
@@ -136,15 +146,18 @@ func (c *UsersController) HandleAdd() mvc.Result {
 	}
 
 	user := &model.User{
-		Username:        form.Username,
-		Password:        p,
-		Name:            form.Name,
-		Email:           form.Email,
-		Note:            form.Note,
-		LicensedDevices: form.LicensedDevices,
-		LoginVerify:     form.LoginVerify,
-		Status:          form.Status,
-		IsAdmin:         form.IsAdmin,
+		Username:          form.Username,
+		Password:          p,
+		Name:              form.Name,
+		Email:             form.Email,
+		Note:              form.Note,
+		LicensedDevices:   form.LicensedDevices,
+		AllowRemoteAccess: boolValueOrDefault(form.AllowRemoteAccess, true),
+		AllowRelay:        boolValueOrDefault(form.AllowRelay, true),
+		AuthorizedUntil:   authorizedUntil,
+		LoginVerify:       form.LoginVerify,
+		Status:            form.Status,
+		IsAdmin:           form.IsAdmin,
 	}
 
 	// 要绑定2fa
@@ -183,6 +196,11 @@ func (c *UsersController) HandleEdit() mvc.Result {
 	if form.LicensedDevices < 0 {
 		form.LicensedDevices = 0
 	}
+	authorizedUntil, err := form.AuthorizedUntilTime()
+	if err != nil {
+		c.recordUserOperationAudit("admin_user_edit", strconv.Itoa(form.Id), nil, sanitizeUserFormForAudit(form), "failure", err.Error())
+		return c.dbError(err)
+	}
 
 	p := ""
 	if form.Password != "" {
@@ -198,13 +216,16 @@ func (c *UsersController) HandleEdit() mvc.Result {
 	}
 
 	newUser := &model.User{
-		Name:            form.Name,
-		Email:           form.Email,
-		Note:            form.Note,
-		LicensedDevices: form.LicensedDevices,
-		LoginVerify:     form.LoginVerify,
-		Status:          form.Status,
-		IsAdmin:         form.IsAdmin,
+		Name:              form.Name,
+		Email:             form.Email,
+		Note:              form.Note,
+		LicensedDevices:   form.LicensedDevices,
+		AllowRemoteAccess: boolValueOrDefault(form.AllowRemoteAccess, true),
+		AllowRelay:        boolValueOrDefault(form.AllowRelay, true),
+		AuthorizedUntil:   authorizedUntil,
+		LoginVerify:       form.LoginVerify,
+		Status:            form.Status,
+		IsAdmin:           form.IsAdmin,
 	}
 
 	if p != "" {
@@ -232,7 +253,7 @@ func (c *UsersController) HandleEdit() mvc.Result {
 		newUser.TwoFactorAuthSecret = form.TwoFactorAuthSecret
 	}
 
-	_, err = c.Db.Where("id = ?", form.Id).MustCols("licensed_devices", "status", "is_admin").Update(newUser)
+	_, err = c.Db.Where("id = ?", form.Id).MustCols("licensed_devices", "allow_remote_access", "allow_relay", "authorized_until", "status", "is_admin").Update(newUser)
 	if err != nil {
 		c.recordUserOperationAudit("admin_user_edit", strconv.Itoa(form.Id), beforeAudit, sanitizeUserFormForAudit(form), "failure", err.Error())
 		return c.dbError(err)
@@ -351,33 +372,53 @@ func sanitizeUserForAudit(user *model.User) iris.Map {
 		return nil
 	}
 	return iris.Map{
-		"id":               user.Id,
-		"username":         user.Username,
-		"name":             user.Name,
-		"email":            user.Email,
-		"licensed_devices": user.LicensedDevices,
-		"note":             user.Note,
-		"login_verify":     user.LoginVerify,
-		"status":           user.Status,
-		"is_admin":         user.IsAdmin,
-		"has_2fa":          user.TwoFactorAuthSecret != "",
+		"id":                  user.Id,
+		"username":            user.Username,
+		"name":                user.Name,
+		"email":               user.Email,
+		"licensed_devices":    user.LicensedDevices,
+		"allow_remote_access": user.AllowRemoteAccess,
+		"allow_relay":         user.AllowRelay,
+		"authorized_until":    formatUserPolicyTime(user.AuthorizedUntil),
+		"note":                user.Note,
+		"login_verify":        user.LoginVerify,
+		"status":              user.Status,
+		"is_admin":            user.IsAdmin,
+		"has_2fa":             user.TwoFactorAuthSecret != "",
 	}
 }
 
 func sanitizeUserFormForAudit(form admin.UserForm) iris.Map {
 	return iris.Map{
-		"id":               form.Id,
-		"username":         form.Username,
-		"name":             form.Name,
-		"email":            form.Email,
-		"licensed_devices": form.LicensedDevices,
-		"note":             form.Note,
-		"login_verify":     form.LoginVerify,
-		"status":           form.Status,
-		"is_admin":         form.IsAdmin,
-		"password_changed": form.Password != "",
-		"has_2fa_secret":   form.TwoFactorAuthSecret != "",
+		"id":                  form.Id,
+		"username":            form.Username,
+		"name":                form.Name,
+		"email":               form.Email,
+		"licensed_devices":    form.LicensedDevices,
+		"allow_remote_access": boolValueOrDefault(form.AllowRemoteAccess, true),
+		"allow_relay":         boolValueOrDefault(form.AllowRelay, true),
+		"authorized_until":    form.AuthorizedUntil,
+		"note":                form.Note,
+		"login_verify":        form.LoginVerify,
+		"status":              form.Status,
+		"is_admin":            form.IsAdmin,
+		"password_changed":    form.Password != "",
+		"has_2fa_secret":      form.TwoFactorAuthSecret != "",
 	}
+}
+
+func boolValueOrDefault(value *bool, fallback bool) bool {
+	if value == nil {
+		return fallback
+	}
+	return *value
+}
+
+func formatUserPolicyTime(value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+	return value.Format(config.TimeFormat)
 }
 
 func auditJSON(value interface{}) string {

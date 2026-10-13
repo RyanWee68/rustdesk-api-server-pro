@@ -41,6 +41,7 @@ SQLite is the default database, and MySQL is supported. Configuration lives in `
 - Compatibility‑enhanced RustDesk client API (compatible with 1.4.9)
 - Address book read/write, shared address books, `note`, and `same_server` compatibility
 - Device list, user list, and audit logs
+- Controlled RustDesk admission PoC: internal admission APIs, device approval states, user remote-control policies, relay policies, and admission audit logs
 - My Synced Devices: admin views all devices, regular users view their own
 - Address Book: account-wide peer/tag views with address-book columns, header filters, and CSV import/export
 - Administrators can create address books for a selected user; regular users can only create their own and cannot delete administrator-created books
@@ -54,6 +55,8 @@ SQLite is the default database, and MySQL is supported. Configuration lives in `
 - SMTP configuration placeholder for admin notifications/templates
 
 Note: some advanced capabilities are placeholders. See the FAQ section.
+
+Controlled admission note: this repository now implements the API-side admission, admin approval, policy, and audit flow. To actually prevent unregistered or unapproved clients from connecting to RustDesk services, you must use a modified `hbbs/hbbr` that calls the internal admission APIs. The official unmodified `rustdesk-server` does not call these endpoints.
 
 ## Recent Updates
 
@@ -187,6 +190,14 @@ smtpConfig:
   password: ""
   encryption: "none"
   from: "noreply@example.com"
+
+rustdeskServer:
+  idServer: ""
+  relayServer: ""
+  apiServer: ""
+  key: ""
+  internalSecret: ""
+  authCacheSeconds: 60
 ```
 
 Important notes:
@@ -196,6 +207,8 @@ Important notes:
 - `httpConfig.staticdir` is the admin UI static directory
 - SQLite database is stored as `server.db` under the runtime working directory
 - MySQL is supported by switching `db.driver` and `db.dsn`
+- `rustdeskServer.internalSecret` protects the internal admission APIs used by modified `hbbs/hbbr`
+- `rustdeskServer.authCacheSeconds` controls the authorization cache TTL returned to the RustDesk server side
 
 ## Ports and Routes
 
@@ -207,6 +220,38 @@ Single‑port layout (example `:12345`):
 - plugin‑sign compatibility: `/lic/web/api/plugin-sign`
 
 If `/api` works but `/` is 404, check `httpConfig.staticdir`.
+
+## Controlled RustDesk Admission PoC
+
+Implemented API-side capabilities:
+
+- `POST /internal/rustdesk/auth`
+- `POST /internal/rustdesk/device/register`
+- `POST /internal/rustdesk/device/heartbeat`
+- `POST /internal/rustdesk/relay/check`
+- Internal secret authentication via `X-Internal-Secret` or `Authorization: Bearer <secret>`
+- Device approval states: pending, approved, rejected, disabled
+- User remote access, relay permission, and authorization expiry policies
+- Admin UI actions for device approval, rejection, disable/enable, and relay switching
+- Admission logs in the audit menu with sanitized request/response summaries
+
+Related docs:
+
+- [`docs/CONTROLLED_RUSTDESK_DEPLOYMENT_PLAN.md`](./docs/CONTROLLED_RUSTDESK_DEPLOYMENT_PLAN.md)
+- [`docs/CONTROLLED_RUSTDESK_POC.md`](./docs/CONTROLLED_RUSTDESK_POC.md)
+- [`docs/CONTROLLED_RUSTDESK_BASELINE_AND_RISKS.md`](./docs/CONTROLLED_RUSTDESK_BASELINE_AND_RISKS.md)
+- [`docs/CONTROLLED_RUSTDESK_KEY_ROTATION.md`](./docs/CONTROLLED_RUSTDESK_KEY_ROTATION.md)
+- [`docker-compose.controlled.yaml`](./docker-compose.controlled.yaml)
+
+Preflight example:
+
+```bash
+export RUSTDESK_API_INTERNAL_SECRET="<random secret with at least 32 characters>"
+export RUSTDESK_CONTROLLED_SERVER_IMAGE="<modified rustdesk-server image>"
+scripts/deploy/controlled-preflight.sh .
+```
+
+The controlled Compose example intentionally requires a modified RustDesk Server image. Using the official unmodified image does not prove protocol-level admission control.
 
 ## Admin UI and Accounts
 

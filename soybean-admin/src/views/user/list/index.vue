@@ -80,6 +80,29 @@ const {
       align: 'center'
     },
     {
+      key: 'allow_remote_access',
+      title: $t('dataMap.user.remote_policy'),
+      align: 'center',
+      render: row => {
+        return (
+          <NSpace justify="center">
+            <NTag bordered={false} type={row.allow_remote_access ? 'success' : 'error'}>
+              {$t('dataMap.user.allow_remote_access')}: {$t(row.allow_remote_access ? 'common.yesOrNo.yes' : 'common.yesOrNo.no')}
+            </NTag>
+            <NTag bordered={false} type={row.allow_relay ? 'success' : 'warning'}>
+              {$t('dataMap.user.allow_relay')}: {$t(row.allow_relay ? 'common.yesOrNo.yes' : 'common.yesOrNo.no')}
+            </NTag>
+          </NSpace>
+        );
+      }
+    },
+    {
+      key: 'authorized_until',
+      title: $t('dataMap.user.authorized_until'),
+      align: 'center',
+      render: row => row.authorized_until || '-'
+    },
+    {
       key: 'login_verify',
       title: $t('dataMap.user.login_verify'),
       align: 'center',
@@ -219,7 +242,7 @@ function handleEditTable(row: Api.UserManagement.User) {
         :data="data"
         size="small"
         :flex-height="!appStore.isMobile"
-        :scroll-x="962"
+        :scroll-x="1220"
         :loading="loading"
         remote
         :row-key="row => row.id"

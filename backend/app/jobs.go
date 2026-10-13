@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/go-co-op/gocron/v2"
-	"github.com/golang-module/carbon/v2"
 	"xorm.io/xorm"
 )
 
@@ -31,7 +30,7 @@ func StartJobs(cfg *config.ServerConfig, dbEngine *xorm.Engine) error {
 	}
 
 	if _, err = s.NewJob(gocron.DurationJob(jobDuration), gocron.NewTask(func() {
-		expired := carbon.Now(cfg.Db.TimeZone).SubSeconds(offlineAfterSeconds).ToStdTime().UTC().Format("2006-01-02 15:04:05")
+		expired := time.Now().Add(-time.Duration(offlineAfterSeconds) * time.Second)
 		_, _ = markExpiredDevicesOffline(dbEngine, expired)
 	})); err != nil {
 		return errcode.Errorf(errcode.ERRB006.Code, errcode.ERRB006.Message)
@@ -42,8 +41,10 @@ func StartJobs(cfg *config.ServerConfig, dbEngine *xorm.Engine) error {
 }
 
 // markExpiredDevicesOffline 将最后心跳早于截止时间的在线设备标记为离线。
-func markExpiredDevicesOffline(dbEngine *xorm.Engine, expired string) (int64, error) {
-	return dbEngine.Where("is_online = 1 and updated_at <= ?", expired).Cols("is_online").Update(&model.Device{
+func markExpiredDevicesOffline(dbEngine *xorm.Engine, expired time.Time) (int64, error) {
+	// 使用模型写入时的数据库时区和格式，避免 SQLite 原生时间绑定的格式差异。
+	cutoff := expired.In(dbEngine.DatabaseTZ).Format("2006-01-02 15:04:05")
+	return dbEngine.Where("is_online = 1 and updated_at <= ?", cutoff).Cols("is_online").Update(&model.Device{
 		IsOnline: false,
 	})
 }

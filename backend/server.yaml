@@ -14,6 +14,14 @@ httpConfig:
   port: ":12345" # RustDesk 客户端 API 公网端口
   adminPort: ":12346" # 管理后台 Web/API 内网端口
 
+rustdeskServer:
+  idServer: ""
+  relayServer: ""
+  apiServer: ""
+  key: ""
+  internalSecret: "" # 受控 hbbs/hbbr 调用 /internal/rustdesk/* 时必须提供的内部密钥；生产环境必须填写随机值
+  authCacheSeconds: 60
+
 smtpConfig:
   host: "127.0.0.1"
   port: 1025

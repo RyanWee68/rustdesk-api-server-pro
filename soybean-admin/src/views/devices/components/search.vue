@@ -35,7 +35,7 @@ async function search() {
             <NFormItemGi span="24 s:12 m:6" :label="$t('dataMap.device.hostname')" path="hostname">
               <NInput v-model:value="model.hostname" />
             </NFormItemGi>
-            <NFormItemGi span="24 s:12 m:6" :label="$t('dataMap.device.username')" path="username">
+            <NFormItemGi span="24 s:12 m:6" label="系统登录名" path="username">
               <NInput v-model:value="model.username" />
             </NFormItemGi>
             <NFormItemGi span="24 s:12 m:6" :label="$t('dataMap.device.rustdesk_id')" path="rustdesk_id">

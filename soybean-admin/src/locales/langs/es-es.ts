@@ -153,6 +153,7 @@ const local: App.I18n.Schema = {
     system_tokens: 'Tokens de usuario',
     'system_access-policy': 'Access Policy',
     system_oauth: 'Inicio de sesión de terceros',
+    audit_admissionlogs: 'Registros de admisión',
     audit_baselogs: 'Registros base',
     audit_filetransferlogs: 'Registros de transferencia de archivos',
     audit_loginlogs: 'Registros de inicio de sesión',
@@ -457,6 +458,10 @@ const local: App.I18n.Schema = {
       name: 'Apodo',
       email: 'Correo',
       licensed_devices: 'Dispositivos con licencia',
+      allow_remote_access: 'Acceso remoto',
+      allow_relay: 'Relay',
+      authorized_until: 'Autorizado hasta',
+      remote_policy: 'Política remota',
       login_verify: 'Verificación de inicio de sesión',
       status: 'Estado',
       is_admin: 'Administrador',
@@ -490,6 +495,13 @@ const local: App.I18n.Schema = {
       peer_id: 'ID de par',
       path: 'Ruta'
     },
+      admissionAudit: {
+        action: 'Acción',
+        result: 'Resultado',
+        code: 'Código',
+        request: 'Solicitud',
+        response: 'Respuesta'
+      },
     mailTemplate: {
       name: 'Apodo',
       type: 'Tipo',
