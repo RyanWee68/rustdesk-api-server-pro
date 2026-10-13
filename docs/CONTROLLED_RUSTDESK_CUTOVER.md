@@ -4,7 +4,7 @@
 
 ## 本次切换结果
 
-1. 用户允许原 `12345` 服务停机、删除；本次为保留可恢复性，只停止并重命名原容器，**未删除旧容器、应用目录或密钥备份**。
+1. 用户允许原 `12345` 服务停机、删除。切换及真实回滚验收期间先停止并重命名原容器；2026-10-13 再次确认离线备份、迁移完整性、旧令牌撤销和新公钥持久化后，已删除停机的旧容器。原应用目录、数据库、密钥归档和切换报告仍保留。
 2. 停机前预设 20 分钟独立 systemd 自动回滚；配置副本严格解析及最终 Compose 预检先通过才停机。首次预检因旧 YAML 没有 `rustdeskServer` 区段而终止，原服务未重启；补齐默认区段后重试成功。
 3. 原应用完整目录与原 key 挂载目录离线归档，分别执行 tar 内容比较，旧 SQLite 完整性检查通过，归档及容器清单摘要已记录。备份目录权限 0700，文件 0600，仅保存在主机 root 私有目录。
 4. 新数据来自独立副本，SQLite DSN 和静态资源路径按新镜像核对；新副本轮换 signKey 和内部密钥，撤销旧登录令牌，保留 `.init.lock`、原账号和业务数据，设备不自动审批。原 OIDC 未启用、OAuth 提供者数量为 0；外部服务联调不计通过。
@@ -13,7 +13,7 @@
 7. 新公钥写入 API 配置并重启 API 后健康通过，server 密钥及卷不变。原回环测试容器的启动时间和健康状态未变；其他历史隔离容器没有被清理或重启。
 8. 成功后取消本次自动回滚定时器。主机私有部署目录保留 `cutover.py`、`runtime.env`、`cutover-report.json` 和 `server-public-key.txt`；操作脚本的三个回滚时序与名称冲突保护自检通过。需要回滚时，在主机使用私有部署目录中的脚本执行 `python3 cutover.py rollback`；先暂停新管理写入并保留新库，脚本不合并切换后的数据。
 
-当前容器为 `rustdesk-api-server-pro`、`rustdesk-hbbs-controlled`、`rustdesk-hbbr-controlled`；旧容器为停机的 `rustdesk-api-server-pro-precontrolled`。API 和原生 server 端口仅绑定主机局域网 IP，管理及 WebSocket 端口仅回环；不配置公网转发。
+当前容器为 `rustdesk-api-server-pro`、`rustdesk-hbbs-controlled`、`rustdesk-hbbr-controlled`；旧容器 `rustdesk-api-server-pro-precontrolled` 已删除。API 和原生 server 端口仅绑定主机局域网 IP，管理及 WebSocket 端口仅回环；不配置公网转发。
 
 局域网 API HTTP 200，内部鉴权无密钥 HTTP 401；三次未签发中继连接均关闭且对应 `ERR-2315`。局域网管理 HTTP 未获得响应，监听与 DNAT 均仅回环；单独 TCP 探测结果有歧义，不作为应用隔离的独立证明。公网扫描、正常 WebSocket、官方客户端全矩阵和真实外部认证仍待验收，不能因端口切换成功而认为全部生产验收已通过。
 
@@ -83,8 +83,10 @@ python3 scripts/deploy/controlled-sqlite-migration-rehearsal.py \
 
 ## 回滚顺序
 
+以下原容器改名回滚流程已在正式切换验收中通过，但旧容器于 2026-10-13 按授权删除，**不再是当前可直接执行的回滚路径**。当前回滚必须在维护窗口根据保留的容器清单、原应用目录和离线归档重新创建旧容器；恢复前仍须保留新库，并复核备份摘要、旧配置和端口占用。没有重新执行恢复演练前，不得把离线材料写成即时回滚已验证。
+
 1. 停止新 Compose 并执行 `down`，不添加 `--volumes`；保留新库、日志和新 key 供排查。
-2. 确认固定名称已释放，将原容器从 `rustdesk-api-server-pro-precontrolled` 改回原名并启动。原容器仍使用原镜像、原配置、原数据库和原端口，禁止将新 schema 的数据库覆盖回旧目录。
+2. 历史验收曾将原容器从 `rustdesk-api-server-pro-precontrolled` 改回原名并启动；该容器现已删除。后续须按保留的容器清单重建原镜像与挂载，禁止将新 schema 的数据库覆盖回旧目录。
 3. 检查旧 API/管理页、原客户端配置及数据库完整性。回滚后客户端需恢复旧服务地址和旧公钥。
 4. 将切换后产生的新数据单独保留；直接回滚不会自动合并新旧库之间的写入。关闭维护窗口前核对这段时间的审批、账号和审计差异。
 
