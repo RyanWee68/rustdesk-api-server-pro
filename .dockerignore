@@ -12,7 +12,6 @@
 **/.env*
 !soybean-admin/.env
 !soybean-admin/.env.prod
-backend/server.yaml
 server.yaml
 data
 99_temp
