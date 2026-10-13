@@ -28,6 +28,7 @@
 - 仓库外一次性 SSH 密钥已恢复使用，未写入仓库。21:05 再次实时确认 API/hbbs/hbbr 全部 healthy 且无遗留恢复定时器；随后为关闭中继补测新建独立自动恢复窗口。
 - 当前正式服务复跑 `controlled-security-check.sh` 退出 0：无密钥和错误密钥拒绝、正确密钥进入准入逻辑；私有密钥只在远端内存加载且未输出。因未提供 `PUBLIC_HOST` 和 `OLD_RUSTDESK_HOST`，公网暴露和旧裸地址仍各保留一项警告。公开 OAuth provider 列表为空；WebAuthn 报告启用但没有 TLS 端口，当前局域网 HTTP 不算外部认证实机通过。
 - 已清理四个历史隔离容器、六个专属测试卷和一个专属网络；清理前逐项确认挂载均属于历史测试命名空间。正式三容器保持 healthy，正式 `rustdesk-controlled-production-20261012_*` key/log 卷仍在，正式数据 bind 未修改。
+- 21:06 的关闭中继补测窗口未收到客户端请求或新增 `ERR-2309`，不增加手工计数；21:25:50 自动恢复成功，复核目标 allow_relay=1、定时器 inactive 且三个正式容器 healthy。
 
 ### 2026-10-13 14:07 强制中继实机通过与远程 CI
 
