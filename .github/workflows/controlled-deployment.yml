@@ -95,7 +95,7 @@ jobs:
           export RUSTDESK_CONTROLLED_SERVER_IMAGE="$(docker image inspect --format '{{.Id}}' rustdesk-controlled-server:ci)"
           python3 scripts/deploy/controlled-compose-preflight.py docker-compose.controlled.yaml
       - name: 三容器协议、API 故障及持久化验收
-        run: sh scripts/deploy/controlled-three-compose-smoke.sh .
+        run: sudo env RUSTDESK_API_IMAGE="$RUSTDESK_API_IMAGE" RUSTDESK_CONTROLLED_SERVER_IMAGE="$RUSTDESK_CONTROLLED_SERVER_IMAGE" sh scripts/deploy/controlled-three-compose-smoke.sh .
         env:
           RUSTDESK_API_IMAGE: rustdesk-controlled-api:ci
           RUSTDESK_CONTROLLED_SERVER_IMAGE: rustdesk-controlled-server:ci
