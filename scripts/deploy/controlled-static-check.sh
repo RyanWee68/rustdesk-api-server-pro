@@ -102,7 +102,7 @@ check_build_context() {
     file="$1"
     require_file "$file"
     [ -f "$file" ] || return
-    if contains "$file" '^backend/server.yaml$' && contains "$file" '^\*\*/node_modules$' &&
+    if contains "$file" '^server.yaml$' && contains "$file" '^\*\*/node_modules$' &&
         contains "$file" '^\*\*/\.env\*$'; then
         pass "Docker 构建上下文排除运行配置、依赖和私有环境文件"
     else
