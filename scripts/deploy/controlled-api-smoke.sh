@@ -118,6 +118,16 @@ oauth:
   providers: []
 EOF
 
+if (
+    cd "$WORK_DIR"
+    ./rustdesk-api-server-pro.exe sync > "$WORK_DIR/sync.log" 2>&1
+); then
+    pass "临时 API 数据库结构同步完成"
+else
+    cat "$WORK_DIR/sync.log" >&2 || true
+    fail "临时 API 数据库结构同步失败"
+fi
+
 (
     cd "$WORK_DIR"
     ./rustdesk-api-server-pro.exe start > "$WORK_DIR/server.log" 2>&1
