@@ -14,6 +14,16 @@
 
 ## 当前完成情况
 
+### 2026-10-14 主线合并、发布链修复与常规镜像发布
+
+- 用户仓库 `RyanWee68/rustdesk-api-server-pro` 的 PR #1 已合并到 `main`，合并提交为 `2e67de9`；没有向官方 `liyan-lucky/rustdesk-api-server-pro` 推送。PR 页面确认 30 个提交及 18 项检查通过。合并后主线[受控部署回归 38562526515](https://github.com/RyanWee68/rustdesk-api-server-pro/actions/runs/38562526515) 四个作业全部成功，真实三容器作业通过。
+- 修复 `.github/workflows/cleanup-history.yml` 超过 GitHub 手工输入上限的问题：13 个输入降为 10 个，单次只能选择一种清理目标；Release 与 tag 不再混合删除，真实删除失败以 `ERR-2404` 至 `ERR-2406` 终止。全部工作流通过 `actionlint v1.7.7`，清理说明与发布门禁同步更新。
+- 第一次常规 GHCR 发布运行 38562550955 在版本递增到 `1.3.21` 后失败，原因是直接使用大小写所有者 `RyanWee68` 生成了非法 Docker 仓库名。后续提交改为先规范化并校验小写命名空间，同时将 Docker 官方 Action 升级到 Node 24 主版本：`login@v4`、`setup-qemu@v4`、`setup-buildx@v4`、`build-push@v7`。
+- 最终提交 `a30f047` 的[受控部署回归 38566198956](https://github.com/RyanWee68/rustdesk-api-server-pro/actions/runs/38566198956) 四个作业全部成功；[常规镜像发布 38566226947](https://github.com/RyanWee68/rustdesk-api-server-pro/actions/runs/38566226947) 的线上门禁和镜像构建均成功。机器人提交 `7342a59` 将版本提升到 `1.3.22`，GHCR 已发布 `latest`、`1.3.22`、`main`、`sha-7342a59`，镜像摘要为 `sha256:d04232b5cd167426e070fec27de154950b22155fe7c20ad0534ab2f797f7b758`。
+- 授权主机只读复核仍为 API、hbbs、hbbr 三容器 healthy，API 与管理页 HTTP 200，无失败 systemd 单元；`12345/12346/21115/21116/21117` 绑定 `192.168.0.211`，`21118/21119` 仅绑定回环。仓库合并和发布没有自动替换现用测试镜像。
+- 受控双镜像发布工作流已在默认分支可见，但仍需仓库已登录会话手工选择 `publish_image=true`；当前自动化浏览器未登录且本机没有已认证 `gh`，因此尚未执行受控 server/API 镜像推送、证明验证和全新运行器按摘要拉取。不得把常规 API 镜像 `1.3.22` 写成受控双镜像已发布。
+- 阶段 4 仍保留环境依赖项：API 故障第三次官方客户端提示确认、关闭中继三次独立人工计数、NAT/代理正常换出口、可信 WSS、共享出口独立角色证明、被控端当前登录态密码学证明、真实外部认证、独立公网与旧地址扫描、独立物理主机离线导入。现阶段仍是局域网受控测试部署，不是阶段 4-8 全部完成。
+
 ### 2026-10-14 公钥清单与遗留 PoC 卷收口
 
 - 对授权主机根文件系统、`/opt`、`/root`、Docker 卷及保留归档做只读清点；可见的 RustDesk 公钥仅有正式部署目录的 `server-public-key.txt` 和正式 key 卷的 `id_ed25519.pub`，去除换行后的 SHA-256 一致，API 当前配置也与正式 key 卷一致。root/opt 保留归档没有 `id_ed25519.pub` 或 `server-public-key.txt` 成员，未读取或输出私钥及凭据。
