@@ -1,6 +1,7 @@
 <script setup lang="tsx">
 import { onMounted, ref } from 'vue';
 import { NButton, NCode, NDatePicker, NInput, NSelect, NSpace, NTag } from 'naive-ui';
+import type { DataTableColumns, TagProps } from 'naive-ui';
 import { $t } from '@/locales';
 import { useAppStore } from '@/store/modules/app';
 import { fetchAdmissionAuditLogList } from '@/service/api/audit';
@@ -38,13 +39,14 @@ const resultOptions = [
   { label: 'error', value: 'error' }
 ];
 
-const resultTagMap: Record<string, any> = {
+const resultTagMap: Record<string, TagProps['type']> = {
   allow: 'success',
   deny: 'warning',
   error: 'error'
 };
 
-const columns = [
+const columns: DataTableColumns<Api.Audit.AdmissionAuditLog> = [
+  { type: 'expand', width: 48, renderExpand: renderExpanded },
   { key: 'id', title: 'ID', align: 'center' as const, width: 80 },
   { key: 'action', title: $t('dataMap.admissionAudit.action'), align: 'center' as const, minWidth: 180 },
   { key: 'rustdesk_id', title: $t('dataMap.audit.rustdesk_id'), align: 'center' as const, minWidth: 130 },
@@ -92,7 +94,7 @@ function renderExpanded(row: Api.Audit.AdmissionAuditLog) {
 async function loadData() {
   loading.value = true;
   try {
-    const params: Record<string, any> = { current: currentPage.value, size: pageSize.value };
+    const params: Record<string, string | number | string[]> = { current: currentPage.value, size: pageSize.value };
     if (searchRustdeskId.value) params.rustdesk_id = searchRustdeskId.value;
     if (searchAction.value) params.action = searchAction.value;
     if (searchResult.value) params.result = searchResult.value;
@@ -191,7 +193,6 @@ onMounted(() => {
         :loading="loading"
         remote
         :row-key="row => row.id"
-        :render-expand="renderExpanded"
         :pagination="{
           page: currentPage,
           pageSize: pageSize,

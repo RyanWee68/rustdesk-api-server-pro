@@ -152,6 +152,7 @@ jobs:
         working-directory: soybean-admin
         run: |
           pnpm typecheck
+          pnpm test:admission-audit
           pnpm build
 
       - name: 本地综合验收
