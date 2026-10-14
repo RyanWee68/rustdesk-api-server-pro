@@ -1,8 +1,8 @@
 # RustDesk Server 受控改造基线与任务清单
 
-更新时间：2026-10-08
+更新时间：2026-10-14
 
-当前已固定官方基线并形成可重放补丁：`patches/rustdesk-server/`。独立本地维护仓库为 `D:/WorkSpace/Other/RustDeskServerControlled`，分支 `codex/controlled-admission`，提交 `adb8c245135396e191f3bf6a042eea0d6a46695f`；源码接线 0 警告，Windows 库测试 16/16 通过。当前只配置官方 `upstream`，远程 fork 及维护 CI 尚未建立。加密握手与收发修复已有 Linux release 镜像和隔离协议验收；以下清单保留为维护要求，完整官方客户端与跨网络防绕过验收仍未完成。
+当前已固定官方基线并形成可重放补丁：`patches/rustdesk-server/`。独立本地维护仓库为 `D:/WorkSpace/Other/RustDeskServerControlled`，分支 `codex/controlled-admission`；私有远程 fork 为 `RyanWee68/rustdesk-server-controlled`，官方仓库保留为 `upstream`。显式强制中继修复提交 `41e846fcb4e345084bc84af4263a9bb1f5def1e1` 已推送，[维护 CI 运行 38346988802](https://github.com/RyanWee68/rustdesk-server-controlled/actions/runs/38346988802) 通过固定子模块核对、Linux `hbbs/hbbr` 编译和 16 项库回归。加密握手、收发及强制中继修复已有 Linux release 镜像、隔离协议验收和官方客户端三次强制中继成功证据；以下清单继续作为维护要求，完整客户端负向、共享出口角色证明、WSS 与跨网络防绕过验收仍未完成。
 
 ## 选型结论
 
