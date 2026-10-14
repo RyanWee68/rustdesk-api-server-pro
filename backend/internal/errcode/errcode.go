@@ -159,6 +159,24 @@ var (
 )
 
 var (
+	ERR2301 = register("ERR-2301", "InternalSecretInvalid", "rustdesk-access", "RustDesk 内部接口密钥无效", "检查 hbbs/hbbr 与 API 的 internalSecret 配置是否一致", "RustDesk internal API secret is invalid", "Check whether hbbs/hbbr and API use the same internalSecret")
+	ERR2302 = register("ERR-2302", "RustdeskIdRequired", "rustdesk-access", "RustDesk 设备 ID 不能为空", "RustDesk Server 调用内部接口时必须提供 rustdesk_id", "RustDesk device ID is required", "RustDesk Server must provide rustdesk_id when calling the internal API")
+	ERR2303 = register("ERR-2303", "LoginTokenInvalid", "rustdesk-access", "设备未登录或登录态无效", "要求客户端先完成 API 登录，再连接受控 RustDesk 服务", "Device is not logged in or login token is invalid", "Require the client to complete API login before connecting to the controlled RustDesk service")
+	ERR2304 = register("ERR-2304", "DeviceNotRegistered", "rustdesk-access", "设备未注册", "先通过内部注册接口登记设备并完成管理员审批", "Device is not registered", "Register the device through the internal register API and complete admin approval")
+	ERR2305 = register("ERR-2305", "DevicePendingApproval", "rustdesk-access", "设备待审批", "管理员审批设备后才能连接", "Device is pending approval", "The device can connect after admin approval")
+	ERR2306 = register("ERR-2306", "DeviceRejected", "rustdesk-access", "设备已拒绝", "管理员需要重新审批或解除拒绝状态", "Device is rejected", "The admin must approve again or clear rejected status")
+	ERR2307 = register("ERR-2307", "DeviceDisabled", "rustdesk-access", "设备已禁用", "管理员启用设备后才能连接", "Device is disabled", "The admin must enable the device before it can connect")
+	ERR2308 = register("ERR-2308", "UserDisabled", "rustdesk-access", "用户已禁用", "管理员启用用户后才能连接", "User is disabled", "The admin must enable the user before the device can connect")
+	ERR2309 = register("ERR-2309", "RelayNotAllowed", "rustdesk-access", "设备或用户不允许中继", "检查设备准入策略和用户远控策略", "Relay is not allowed for this device or user", "Check device admission policy and user remote-control policy")
+	ERR2310 = register("ERR-2310", "AuthorizationExpired", "rustdesk-access", "设备授权已过期", "管理员需要延长或重新授予设备授权", "Device authorization has expired", "The admin must extend or grant device authorization again")
+	ERR2311 = register("ERR-2311", "UserRemoteAccessDisabled", "rustdesk-access", "用户远控权限已关闭", "管理员开启用户远控权限后才能连接", "User remote access is disabled", "The admin must enable user remote access before the device can connect")
+	ERR2312 = register("ERR-2312", "UserAuthorizationExpired", "rustdesk-access", "用户远控授权已过期", "管理员需要延长或重新授予用户远控授权", "User remote authorization has expired", "The admin must extend or grant user remote authorization again")
+	ERR2313 = register("ERR-2313", "DeviceIdentityMismatch", "rustdesk-access", "设备身份与登记信息不一致", "核实设备 UUID 和指纹，禁止覆盖已登记身份", "Device identity does not match registration", "Verify the device UUID and fingerprint")
+	ERR2314 = register("ERR-2314", "DeviceOwnerMismatch", "rustdesk-access", "设备绑定用户与登录用户不一致", "核实设备归属后由管理员处理", "Device owner does not match the logged-in user", "Ask an administrator to verify device ownership")
+	ERR2315 = register("ERR-2315", "RelayGrantInvalid", "rustdesk-access", "中继会话无效或已核销", "重新由信令服务发起连接", "Relay grant is invalid or already consumed", "Start a new connection through the rendezvous server")
+)
+
+var (
 	ERR3001 = register("ERR-3001", "OidcDisabled", "oidc", "OIDC 登录已禁用", "在 server.yaml 中设置 oidc.enabled: true", "OIDC login is disabled", "Set oidc.enabled: true in server.yaml")
 	ERR3002 = register("ERR-3002", "OidcFailedToGenerateState", "oidc", "生成 OIDC 状态令牌失败", "系统随机数生成异常，检查系统熵源或重启服务", "Failed to generate OIDC state token", "System random number generation error, check system entropy source or restart the service")
 	ERR3003 = register("ERR-3003", "OidcMissingCodeOrState", "oidc", "OIDC 回调缺少授权码或状态参数", "检查 OIDC 回调地址配置是否正确", "OIDC callback missing authorization code or state parameter", "Check if the OIDC callback URL is correctly configured")

@@ -13,7 +13,9 @@ ADMIN_USER="${ADMIN_USER:-test}"
 ADMIN_PASS="${ADMIN_PASS:-testadmin}"
 PORT="${PORT:-12345}"
 ADMIN_PORT="${ADMIN_PORT:-12346}"
-export ADMIN_USER ADMIN_PASS PORT ADMIN_PORT
+RUSTDESK_API_INTERNAL_SECRET="${RUSTDESK_API_INTERNAL_SECRET:-}"
+RUSTDESK_AUTH_CACHE_SECONDS="${RUSTDESK_AUTH_CACHE_SECONDS:-60}"
+export ADMIN_USER ADMIN_PASS PORT ADMIN_PORT RUSTDESK_API_INTERNAL_SECRET RUSTDESK_AUTH_CACHE_SECONDS
 
 # Make mounted config at /app/server.yaml effective, because the binary reads server.yaml from CWD.
 # The process runs in /app/data, so keep /app/data/server.yaml in sync with /app/server.yaml.
@@ -73,6 +75,63 @@ if [ -n "$ADMIN_PORT" ]; then
             rm -f "$tmp_yaml"
         fi
     fi
+fi
+
+if [ -f /app/data/server.yaml ]; then
+    tmp_yaml="$(mktemp)"
+    awk -v internal_secret="$RUSTDESK_API_INTERNAL_SECRET" -v cache_seconds="$RUSTDESK_AUTH_CACHE_SECONDS" '
+        function print_rustdesk_block(indent) {
+            print "rustdeskServer:"
+            print indent "idServer: \"\""
+            print indent "relayServer: \"\""
+            print indent "apiServer: \"\""
+            print indent "key: \"\""
+            print indent "internalSecret: \"" internal_secret "\""
+            print indent "authCacheSeconds: " cache_seconds
+        }
+
+        /^rustdeskServer:/ {
+            in_rustdesk = 1
+            seen_rustdesk = 1
+            print
+            next
+        }
+        in_rustdesk && /^[^ ]/ {
+            if (!seen_internal_secret) {
+                print "  internalSecret: \"" internal_secret "\""
+            }
+            if (!seen_cache_seconds) {
+                print "  authCacheSeconds: " cache_seconds
+            }
+            in_rustdesk = 0
+        }
+        in_rustdesk && /^[[:space:]]*internalSecret:/ {
+            print "  internalSecret: \"" internal_secret "\""
+            seen_internal_secret = 1
+            next
+        }
+        in_rustdesk && /^[[:space:]]*authCacheSeconds:/ {
+            print "  authCacheSeconds: " cache_seconds
+            seen_cache_seconds = 1
+            next
+        }
+        { print }
+        END {
+            if (in_rustdesk) {
+                if (!seen_internal_secret) {
+                    print "  internalSecret: \"" internal_secret "\""
+                }
+                if (!seen_cache_seconds) {
+                    print "  authCacheSeconds: " cache_seconds
+                }
+            }
+            if (!seen_rustdesk) {
+                print_rustdesk_block("  ")
+            }
+        }
+    ' /app/data/server.yaml > "$tmp_yaml"
+    cat "$tmp_yaml" > /app/data/server.yaml
+    rm -f "$tmp_yaml"
 fi
 
 # Harden first-run Docker defaults. The image contains a sample server.yaml, but the

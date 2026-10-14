@@ -1,0 +1,187 @@
+name: 受控镜像发布
+run-name: 受控镜像发布（${{ github.ref_name }}）
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_image:
+        description: "验收通过后推送不可变镜像并生成证明"
+        required: false
+        default: false
+        type: boolean
+
+permissions: {}
+
+concurrency:
+  group: controlled-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-test-publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    outputs:
+      server_image: ${{ steps.image.outputs.server }}
+      api_image: ${{ steps.image.outputs.api }}
+      image_tag: ${{ steps.image.outputs.tag }}
+      server_digest: ${{ steps.publish.outputs.server_digest }}
+      api_digest: ${{ steps.publish.outputs.api_digest }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v5
+
+      - name: 构建受控镜像
+        shell: bash
+        run: |
+          set -euo pipefail
+          build_time="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          docker build -f Dockerfile.controlled-server -t rustdesk-controlled-server:release .
+          docker build -f Dockerfile.controlled \
+            --build-arg RUSTDESK_CONTROLLED_SERVER_IMAGE=rustdesk-controlled-server:release \
+            --build-arg APP_VERSION="sha-${GITHUB_SHA}" \
+            --build-arg BUILD_TIME="${build_time}" \
+            -t rustdesk-controlled-all:release .
+          docker build -f Dockerfile.controlled-api \
+            --build-arg RUSTDESK_CONTROLLED_IMAGE=rustdesk-controlled-all:release \
+            -t rustdesk-controlled-api:release .
+
+      - name: 三容器协议、故障及持久化验收
+        shell: bash
+        run: |
+          sudo env \
+            RUSTDESK_API_IMAGE=rustdesk-controlled-api:release \
+            RUSTDESK_CONTROLLED_SERVER_IMAGE=rustdesk-controlled-server:release \
+            sh scripts/deploy/controlled-three-compose-smoke.sh .
+
+      - name: 准备不可变镜像名称
+        if: inputs.publish_image
+        id: image
+        shell: bash
+        run: |
+          set -euo pipefail
+          owner="$(printf '%s' "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          case "$owner" in
+            ''|*[!a-z0-9._-]*)
+              echo "ERR-2394 仓库所有者不能转换为合法镜像命名空间" >&2
+              exit 1
+              ;;
+          esac
+          echo "server=ghcr.io/${owner}/rustdesk-controlled-server" >> "$GITHUB_OUTPUT"
+          echo "api=ghcr.io/${owner}/rustdesk-controlled-api" >> "$GITHUB_OUTPUT"
+          echo "tag=sha-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: 登录 GHCR
+        if: inputs.publish_image
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 推送受控镜像
+        if: inputs.publish_image
+        id: publish
+        env:
+          SERVER_IMAGE: ${{ steps.image.outputs.server }}
+          API_IMAGE: ${{ steps.image.outputs.api }}
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          push_image() {
+            source_image="$1"
+            target_image="$2"
+            target_ref="${target_image}:${IMAGE_TAG}"
+            docker tag "$source_image" "$target_ref"
+            if ! output="$(docker push "$target_ref" 2>&1)"; then
+              printf '%s\n' "$output" >&2
+              echo "ERR-2394 推送受控镜像失败：${target_ref}" >&2
+              return 1
+            fi
+            printf '%s\n' "$output" >&2
+            digest="$(printf '%s\n' "$output" | sed -n 's/^.*digest: \(sha256:[0-9a-f]\{64\}\).*$/\1/p' | tail -n 1)"
+            if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "ERR-2394 无法取得已推送镜像摘要：${target_ref}" >&2
+              exit 1
+            fi
+            printf '%s' "$digest"
+          }
+
+          server_digest="$(push_image rustdesk-controlled-server:release "$SERVER_IMAGE")"
+          api_digest="$(push_image rustdesk-controlled-api:release "$API_IMAGE")"
+          echo "server_digest=${server_digest}" >> "$GITHUB_OUTPUT"
+          echo "api_digest=${api_digest}" >> "$GITHUB_OUTPUT"
+
+      - name: 生成 server 镜像供应链证明
+        if: inputs.publish_image
+        uses: actions/attest@v4
+        with:
+          subject-name: ${{ steps.image.outputs.server }}
+          subject-digest: ${{ steps.publish.outputs.server_digest }}
+          push-to-registry: true
+
+      - name: 生成 API 镜像供应链证明
+        if: inputs.publish_image
+        uses: actions/attest@v4
+        with:
+          subject-name: ${{ steps.image.outputs.api }}
+          subject-digest: ${{ steps.publish.outputs.api_digest }}
+          push-to-registry: true
+
+      - name: 验证已发布镜像证明
+        if: inputs.publish_image
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SERVER_REF: ${{ steps.image.outputs.server }}:${{ steps.image.outputs.tag }}
+          API_REF: ${{ steps.image.outputs.api }}:${{ steps.image.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh attestation verify "oci://${SERVER_REF}" --repo "$GITHUB_REPOSITORY"
+          gh attestation verify "oci://${API_REF}" --repo "$GITHUB_REPOSITORY"
+
+  registry-pull-smoke:
+    if: inputs.publish_image
+    needs: build-test-publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    env:
+      RUSTDESK_CONTROLLED_SERVER_IMAGE: ${{ needs.build-test-publish.outputs.server_image }}@${{ needs.build-test-publish.outputs.server_digest }}
+      RUSTDESK_API_IMAGE: ${{ needs.build-test-publish.outputs.api_image }}@${{ needs.build-test-publish.outputs.api_digest }}
+    steps:
+      - name: 检出验收工具
+        uses: actions/checkout@v5
+
+      - name: 登录 GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 在全新运行器按摘要拉取镜像
+        shell: bash
+        run: |
+          set -euo pipefail
+          for image in "$RUSTDESK_CONTROLLED_SERVER_IMAGE" "$RUSTDESK_API_IMAGE"; do
+            if ! docker pull "$image"; then
+              echo "ERR-2394 独立运行器无法按摘要拉取受控镜像" >&2
+              exit 1
+            fi
+          done
+
+      - name: 独立运行器三容器验收
+        shell: bash
+        run: |
+          sudo env \
+            RUSTDESK_API_IMAGE="$RUSTDESK_API_IMAGE" \
+            RUSTDESK_CONTROLLED_SERVER_IMAGE="$RUSTDESK_CONTROLLED_SERVER_IMAGE" \
+            sh scripts/deploy/controlled-three-compose-smoke.sh .

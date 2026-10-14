@@ -1,10 +1,10 @@
 package cmd
 
 import (
-	"fmt"
 	"rustdesk-api-server-pro/app/model"
 	"rustdesk-api-server-pro/config"
 	"rustdesk-api-server-pro/db"
+	"rustdesk-api-server-pro/internal/errcode"
 	"rustdesk-api-server-pro/util"
 
 	"github.com/spf13/cobra"
@@ -13,14 +13,14 @@ import (
 
 var dbSyncCmd = &cobra.Command{
 	Use:   "sync",
-	Short: "The api-server database synchronization",
-	Run: func(cmd *cobra.Command, args []string) {
+	Short: "同步 API 数据库结构和旧令牌",
+	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg := config.GetServerConfig()
 		engine, err := db.NewEngine(cfg.Db)
 		if err != nil {
-			fmt.Println("Db Engine create error:", err)
-			return
+			return errcode.Errorf(errcode.ERRB010.Code, "创建数据库引擎失败: %w", err)
 		}
+		defer engine.Close()
 		models := []interface{}{
 			new(model.User),
 			new(model.Peer),
@@ -33,6 +33,7 @@ var dbSyncCmd = &cobra.Command{
 			new(model.CompatAPIAudit),
 			new(model.FileTransfer),
 			new(model.Device),
+			new(model.RustdeskRelayGrant),
 			new(model.AddressBook),
 			new(model.AddressBookTag),
 			new(model.AddressBookRule),
@@ -48,30 +49,33 @@ var dbSyncCmd = &cobra.Command{
 			new(model.StrategyAssignment),
 			new(model.OAuthAccount),
 			new(model.OAuthLoginSession),
-		new(model.ErrorLog),
-		new(model.ContainerLog),
-		new(model.WebauthnCredential),
-		new(model.WebauthnSession),
-	}
+			new(model.ErrorLog),
+			new(model.ContainerLog),
+			new(model.WebauthnCredential),
+			new(model.WebauthnSession),
+		}
 		err = engine.Sync(models...)
 		if err != nil {
-			fmt.Println("Db init error:", err)
-			return
+			return errcode.Errorf(errcode.ERRB010.Code, "同步数据库结构失败: %w", err)
 		}
 		if err = migratePlaintextAuthTokens(engine); err != nil {
-			fmt.Println("Auth token migration warning:", err)
+			return errcode.Errorf(errcode.ERRB010.Code, "迁移旧登录令牌失败: %w", err)
 		}
-		fmt.Println("Database tables sync success")
+		cmd.Println("数据库结构及登录令牌同步成功")
+		return nil
 	},
 }
 
+// migratePlaintextAuthTokens 将旧明文令牌转为摘要，失败时阻止服务启动。
 func migratePlaintextAuthTokens(engine *xorm.Engine) error {
 	legacyTokens := make([]model.AuthToken, 0)
-	if err := engine.Where("token != '' and token_hash = ''").Find(&legacyTokens); err != nil {
+	if err := engine.Where("token != ''").Find(&legacyTokens); err != nil {
 		return err
 	}
 	for _, token := range legacyTokens {
-		token.TokenHash = util.Sha256Hex(token.Token)
+		if token.TokenHash == "" {
+			token.TokenHash = util.Sha256Hex(token.Token)
+		}
 		token.Token = ""
 		if _, err := engine.Where("id = ?", token.Id).Cols("token_hash", "token").Update(&token); err != nil {
 			return err

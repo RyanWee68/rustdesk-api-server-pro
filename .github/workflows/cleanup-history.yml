@@ -90,7 +90,7 @@ permissions:
 jobs:
   cleanup:
     name: 清理任务
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: 参数检查
         shell: bash

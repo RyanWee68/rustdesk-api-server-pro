@@ -58,6 +58,7 @@ func newClientApp(cfg *config.ServerConfig, dbEngine *xorm.Engine) (*iris.Applic
 		return nil, err
 	}
 	SetClientRoute(app)
+	SetInternalRoute(app)
 	return app, nil
 }
 

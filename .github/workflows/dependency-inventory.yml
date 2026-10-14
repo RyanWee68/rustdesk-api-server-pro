@@ -15,19 +15,19 @@ permissions:
 
 jobs:
   inventory:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: 配置 Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: '>=1.23.1'
           cache: false
 
       - name: 配置 Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 20
 
@@ -60,7 +60,7 @@ jobs:
           cp COMPLIANCE.md compliance-artifacts/
 
       - name: 上传依赖清单
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: dependency-inventory
           path: compliance-artifacts

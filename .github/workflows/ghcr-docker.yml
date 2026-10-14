@@ -29,7 +29,7 @@ concurrency:
 
 jobs:
   quality-gate:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     outputs:
       should_publish: ${{ steps.context.outputs.should_publish }}
@@ -145,7 +145,7 @@ jobs:
   build-image:
     needs: quality-gate
     if: needs.quality-gate.outputs.should_publish == 'true' && needs.quality-gate.outputs.publish_allowed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       PUSH_IMAGE: ${{ needs.quality-gate.outputs.push_image }}
       TARGET_SHA: ${{ needs.quality-gate.outputs.target_sha }}
@@ -153,7 +153,7 @@ jobs:
       IS_TAG: ${{ needs.quality-gate.outputs.is_tag }}
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           ref: ${{ needs.quality-gate.outputs.checkout_ref }}

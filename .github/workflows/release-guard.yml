@@ -15,10 +15,10 @@ permissions:
 
 jobs:
   release-guard:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: 检查不能存在的一次性发布流程
         shell: bash

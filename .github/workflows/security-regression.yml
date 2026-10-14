@@ -23,10 +23,10 @@ permissions:
 
 jobs:
   security-regression:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: 执行安全回归检查
         run: bash scripts/security/security-regression-check.sh

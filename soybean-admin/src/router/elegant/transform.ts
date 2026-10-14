@@ -170,6 +170,7 @@ const routeMap: RouteMap = {
   "about_help": "/about/help",
   "about_version": "/about/version",
   "audit": "/audit",
+  "audit_admissionlogs": "/audit/admissionlogs",
   "audit_baselogs": "/audit/baselogs",
   "audit_error-logs": "/audit/error-logs",
   "audit_filetransferlogs": "/audit/filetransferlogs",

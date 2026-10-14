@@ -153,6 +153,7 @@ const local: App.I18n.Schema = {
     system_tokens: 'User Tokens',
     'system_access-policy': 'Access Policy',
     system_oauth: 'Third-Party Login',
+    audit_admissionlogs: 'Admission Logs',
     audit_baselogs: 'Base Logs',
     audit_filetransferlogs: 'File Transfer Logs',
     audit_loginlogs: 'Login Logs',
@@ -464,6 +465,10 @@ const local: App.I18n.Schema = {
       name: 'Nickname',
       email: 'Email',
       licensed_devices: 'Licensed Devices',
+      allow_remote_access: 'Remote Access',
+      allow_relay: 'Relay',
+      authorized_until: 'Authorized Until',
+      remote_policy: 'Remote Policy',
       login_verify: 'Login Verify',
       status: 'Status',
       is_admin: 'Is Admin',
@@ -496,6 +501,13 @@ const local: App.I18n.Schema = {
       fileTransferTypeLabel: { master_controlled: 'Master -> Controlled', controlled_master: 'Controlled -> Master' },
       peer_id: 'Peer ID',
       path: 'Path'
+    },
+    admissionAudit: {
+      action: 'Action',
+      result: 'Result',
+      code: 'Code',
+      request: 'Request',
+      response: 'Response'
     },
     mailTemplate: {
       name: 'Name',

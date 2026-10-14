@@ -62,6 +62,7 @@
     "preview": "vite preview",
     "release": "sa release",
     "typecheck": "vue-tsc --noEmit --skipLibCheck",
+    "test:admission-audit": "node scripts/admission-audit-regression.cjs",
     "update-pkg": "sa update-pkg"
   },
   "dependencies": {

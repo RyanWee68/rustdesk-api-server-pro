@@ -1,0 +1,93 @@
+services:
+  rustdesk-api-server-pro:
+    container_name: rustdesk-api-server-pro
+    image: ${RUSTDESK_API_IMAGE:?set API image built from the current controlled source}
+    environment:
+      - "ADMIN_USER=${ADMIN_USER:?set initial admin user}"
+      - "ADMIN_PASS=${ADMIN_PASS:?set initial admin password}"
+      - "PORT=12345"
+      - "ADMIN_PORT=12346"
+      - "RUSTDESK_API_INTERNAL_SECRET=${RUSTDESK_API_INTERNAL_SECRET:?set RUSTDESK_API_INTERNAL_SECRET}"
+      - "RUSTDESK_AUTH_CACHE_SECONDS=${RUSTDESK_AUTH_CACHE_SECONDS:-60}"
+      - "RUSTDESK_HBBS_DIR=/app/rustdesk-server"
+      - "CONTROLLED_API_ONLY=1"
+    ports:
+      - "${FNOS_HTTP_PORT:-12345}:12345"
+      - "${FNOS_ADMIN_HTTP_BIND:-127.0.0.1}:${FNOS_ADMIN_HTTP_PORT:-12346}:12346"
+    volumes:
+      - ./data:/app/data
+      - rustdesk-server-key:/app/rustdesk-server
+      - controlled-logs:/app/logs
+    networks:
+      - rustdesk-control
+    restart: unless-stopped
+
+  rustdesk-hbbs:
+    container_name: rustdesk-hbbs-controlled
+    image: ${RUSTDESK_CONTROLLED_SERVER_IMAGE:?set RUSTDESK_CONTROLLED_SERVER_IMAGE}
+    command: ["hbbs"]
+    healthcheck:
+      test: ["CMD-SHELL", "awk '$$2 ~ /:527C$$/ && $$4 == \"0A\" { found = 1 } END { exit !found }' /proc/net/tcp /proc/net/tcp6"]
+      interval: 5s
+      timeout: 3s
+      start_period: 10s
+      retries: 12
+    environment:
+      - "MUST_LOGIN=1"
+      - "API_SERVER=http://rustdesk-api-server-pro:12345"
+      - "API_INTERNAL_SECRET=${RUSTDESK_API_INTERNAL_SECRET:?set RUSTDESK_API_INTERNAL_SECRET}"
+      - "API_TIMEOUT_SECONDS=${RUSTDESK_API_TIMEOUT_SECONDS:-3}"
+      - "AUTH_CACHE_SECONDS=${RUSTDESK_AUTH_CACHE_SECONDS:-60}"
+      - "RUSTDESK_KEY_DIR=/data"
+    ports:
+      - "${RUSTDESK_HBBS_TCP_21115:-21115}:21115/tcp"
+      - "${RUSTDESK_HBBS_TCP_21116:-21116}:21116/tcp"
+      - "${RUSTDESK_HBBS_UDP_21116:-21116}:21116/udp"
+      - "${RUSTDESK_HBBS_TCP_21118:-127.0.0.1:21118}:21118/tcp"
+    volumes:
+      - rustdesk-server-key:/data
+    depends_on:
+      rustdesk-api-server-pro:
+        condition: service_healthy
+    networks:
+      - rustdesk-control
+    restart: unless-stopped
+
+  rustdesk-hbbr:
+    container_name: rustdesk-hbbr-controlled
+    image: ${RUSTDESK_CONTROLLED_SERVER_IMAGE:?set RUSTDESK_CONTROLLED_SERVER_IMAGE}
+    command: ["hbbr"]
+    healthcheck:
+      test: ["CMD-SHELL", "awk '$$2 ~ /:527D$$/ && $$4 == \"0A\" { found = 1 } END { exit !found }' /proc/net/tcp /proc/net/tcp6"]
+      interval: 5s
+      timeout: 3s
+      start_period: 10s
+      retries: 12
+    environment:
+      - "MUST_LOGIN=1"
+      - "API_SERVER=http://rustdesk-api-server-pro:12345"
+      - "API_INTERNAL_SECRET=${RUSTDESK_API_INTERNAL_SECRET:?set RUSTDESK_API_INTERNAL_SECRET}"
+      - "API_TIMEOUT_SECONDS=${RUSTDESK_API_TIMEOUT_SECONDS:-3}"
+      - "AUTH_CACHE_SECONDS=${RUSTDESK_AUTH_CACHE_SECONDS:-60}"
+      - "RUSTDESK_KEY_DIR=/data"
+    ports:
+      - "${RUSTDESK_HBBR_TCP_21117:-21117}:21117/tcp"
+      - "${RUSTDESK_HBBR_TCP_21119:-127.0.0.1:21119}:21119/tcp"
+    volumes:
+      - rustdesk-server-key:/data
+    depends_on:
+      rustdesk-api-server-pro:
+        condition: service_healthy
+      rustdesk-hbbs:
+        condition: service_healthy
+    networks:
+      - rustdesk-control
+    restart: unless-stopped
+
+networks:
+  rustdesk-control:
+    driver: bridge
+
+volumes:
+  rustdesk-server-key:
+  controlled-logs:

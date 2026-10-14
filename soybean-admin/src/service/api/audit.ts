@@ -8,6 +8,10 @@ export function fetchAuditFileTransferLogList(params: any) {
   return request<Api.Audit.AuditFileTransferList>({ url: '/audit/file-transfer-list', params });
 }
 
+export function fetchAdmissionAuditLogList(params: any) {
+  return request<Api.Audit.AdmissionAuditLogList>({ url: '/audit/admission-list', params });
+}
+
 export function fetchAuditLogClear() {
   return request<any>({ url: '/audit/clear', method: 'delete' });
 }

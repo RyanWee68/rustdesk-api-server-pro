@@ -19,14 +19,14 @@ permissions:
 
 jobs:
   quality:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     defaults:
       run:
         working-directory: soybean-admin
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: 配置 pnpm
         uses: pnpm/action-setup@v6.0.9
@@ -34,7 +34,7 @@ jobs:
           version: 9
 
       - name: 配置 Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: pnpm
@@ -65,7 +65,7 @@ jobs:
         run: pnpm i18n:compare
 
       - name: 上传 i18n 报告产物
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: i18n-report
           path: |

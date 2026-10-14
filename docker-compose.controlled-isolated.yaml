@@ -1,0 +1,26 @@
+services:
+  rustdesk-controlled:
+    image: ${RUSTDESK_CONTROLLED_IMAGE:?set RUSTDESK_CONTROLLED_IMAGE}
+    environment:
+      ADMIN_USER: ${ADMIN_USER:?set ADMIN_USER}
+      ADMIN_PASS: ${ADMIN_PASS:?set ADMIN_PASS}
+      PORT: "12345"
+      ADMIN_PORT: "12346"
+      MUST_LOGIN: "1"
+      API_SERVER: http://127.0.0.1:12345
+      RUSTDESK_API_INTERNAL_SECRET: ${RUSTDESK_API_INTERNAL_SECRET:?set RUSTDESK_API_INTERNAL_SECRET}
+      API_INTERNAL_SECRET: ${RUSTDESK_API_INTERNAL_SECRET:?set RUSTDESK_API_INTERNAL_SECRET}
+      RUSTDESK_AUTH_CACHE_SECONDS: "60"
+      AUTH_CACHE_SECONDS: "60"
+      API_TIMEOUT_SECONDS: "3"
+      RUSTDESK_KEY_DIR: /app/rustdesk-server
+    volumes:
+      - controlled-data:/app/data
+      - controlled-key:/app/rustdesk-server
+      - controlled-logs:/app/logs
+    restart: "no"
+
+volumes:
+  controlled-data:
+  controlled-key:
+  controlled-logs:

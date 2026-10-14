@@ -1,0 +1,48 @@
+# 复用正式服务定义，清除固定名称和宿主端口，全部使用本项目专属卷。
+services:
+  rustdesk-api-server-pro:
+    extends:
+      file: docker-compose.controlled.yaml
+      service: rustdesk-api-server-pro
+    container_name: !reset null
+    ports: !reset []
+    volumes: !override
+      - controlled-data:/app/data
+      - rustdesk-server-key:/app/rustdesk-server
+      - controlled-logs:/app/logs
+    restart: "no"
+
+  rustdesk-hbbs:
+    extends:
+      file: docker-compose.controlled.yaml
+      service: rustdesk-hbbs
+    command: ["hbbs", "-r", "rustdesk-hbbr:21117"]
+    depends_on: !override
+      rustdesk-api-server-pro:
+        condition: service_healthy
+      rustdesk-hbbr:
+        condition: service_healthy
+    container_name: !reset null
+    ports: !reset []
+    restart: "no"
+
+  rustdesk-hbbr:
+    extends:
+      file: docker-compose.controlled.yaml
+      service: rustdesk-hbbr
+    depends_on: !override
+      rustdesk-api-server-pro:
+        condition: service_healthy
+    container_name: !reset null
+    ports: !reset []
+    restart: "no"
+
+networks:
+  rustdesk-control:
+    driver: bridge
+    internal: true
+
+volumes:
+  controlled-data:
+  rustdesk-server-key:
+  controlled-logs:

@@ -153,6 +153,7 @@ const local: App.I18n.Schema = {
     system_tokens: 'Токены пользователей',
     'system_access-policy': 'Access Policy',
     system_oauth: 'Вход через третьих лиц',
+    audit_admissionlogs: 'Журналы допуска',
     audit_baselogs: 'Базовые журналы',
     audit_filetransferlogs: 'Журналы передачи файлов',
     audit_loginlogs: 'Журналы входа',
@@ -457,6 +458,10 @@ const local: App.I18n.Schema = {
       name: 'Никнейм',
       email: 'Электронная почта',
       licensed_devices: 'Лицензированные устройства',
+      allow_remote_access: 'Удаленный доступ',
+      allow_relay: 'Ретрансляция',
+      authorized_until: 'Авторизовано до',
+      remote_policy: 'Удаленная политика',
       login_verify: 'Проверка входа',
       status: 'Статус',
       is_admin: 'Администратор',
@@ -490,6 +495,13 @@ const local: App.I18n.Schema = {
       peer_id: 'ID пира',
       path: 'Путь'
     },
+      admissionAudit: {
+        action: 'Действие',
+        result: 'Результат',
+        code: 'Код',
+        request: 'Запрос',
+        response: 'Ответ'
+      },
     mailTemplate: {
       name: 'Никнейм',
       type: 'Тип',

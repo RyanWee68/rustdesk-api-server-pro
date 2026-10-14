@@ -1,0 +1,17 @@
+[package]
+name = "rustdesk-server-controlled-admission-template"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "controlled_admission.rs"
+
+[dependencies]
+anyhow = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["sync"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt", "time", "net"] }

@@ -1,0 +1,11 @@
+services:
+  rustdesk-controlled:
+    environment:
+      HBBS_ARGS: -r ${LAN_BIND_IP:?set LAN_BIND_IP}:21117
+    ports:
+      - "${LAN_BIND_IP:?set LAN_BIND_IP}:22545:12345/tcp"
+      - "127.0.0.1:22546:12346/tcp"
+      - "${LAN_BIND_IP:?set LAN_BIND_IP}:21115:21115/tcp"
+      - "${LAN_BIND_IP:?set LAN_BIND_IP}:21116:21116/tcp"
+      - "${LAN_BIND_IP:?set LAN_BIND_IP}:21116:21116/udp"
+      - "${LAN_BIND_IP:?set LAN_BIND_IP}:21117:21117/tcp"

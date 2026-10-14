@@ -153,6 +153,7 @@ const local: App.I18n.Schema = {
     system_tokens: 'ユーザートークン',
     'system_access-policy': 'Access Policy',
     system_oauth: 'サードパーティログイン',
+    audit_admissionlogs: '認証ログ',
     audit_baselogs: 'ベースログ',
     audit_filetransferlogs: 'ファイル転送ログ',
     audit_loginlogs: 'ログインログ',
@@ -457,6 +458,10 @@ const local: App.I18n.Schema = {
       name: 'ニックネーム',
       email: 'メール',
       licensed_devices: 'ライセンスされたデバイス',
+      allow_remote_access: 'リモートアクセス',
+      allow_relay: 'リレー',
+      authorized_until: '認証期限',
+      remote_policy: 'リモートポリシー',
       login_verify: 'ログイン認証',
       status: 'ステータス',
       is_admin: '管理者',
@@ -490,6 +495,13 @@ const local: App.I18n.Schema = {
       peer_id: 'ピアID',
       path: 'パス'
     },
+      admissionAudit: {
+        action: 'アクション',
+        result: '結果',
+        code: 'コード',
+        request: 'リクエスト',
+        response: 'レスポンス'
+      },
     mailTemplate: {
       name: 'ニックネーム',
       type: 'タイプ',

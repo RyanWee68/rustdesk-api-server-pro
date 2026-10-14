@@ -153,6 +153,7 @@ const local: App.I18n.Schema = {
     system_tokens: '사용자 토큰',
     'system_access-policy': 'Access Policy',
     system_oauth: '제3자 로그인',
+    audit_admissionlogs: '접근 로그',
     audit_baselogs: '기본 로그',
     audit_filetransferlogs: '파일 전송 로그',
     audit_loginlogs: '로그인 로그',
@@ -457,6 +458,10 @@ const local: App.I18n.Schema = {
       name: '닉네임',
       email: '이메일',
       licensed_devices: '라이선스된 디바이스',
+      allow_remote_access: '원격 액세스',
+      allow_relay: '릴레이',
+      authorized_until: '권한 만료',
+      remote_policy: '원격 정책',
       login_verify: '로그인 확인',
       status: '상태',
       is_admin: '관리자',
@@ -490,6 +495,13 @@ const local: App.I18n.Schema = {
       peer_id: '피어 ID',
       path: '경로'
     },
+      admissionAudit: {
+        action: '동작',
+        result: '결과',
+        code: '코드',
+        request: '요청',
+        response: '응답'
+      },
     mailTemplate: {
       name: '닉네임',
       type: '유형',

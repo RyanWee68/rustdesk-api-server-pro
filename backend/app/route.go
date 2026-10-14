@@ -3,6 +3,7 @@ package app
 import (
 	"rustdesk-api-server-pro/app/controller/admin"
 	"rustdesk-api-server-pro/app/controller/api"
+	rustdeskinternal "rustdesk-api-server-pro/app/controller/rustdeskinternal"
 	"rustdesk-api-server-pro/app/controller/userportal"
 	"rustdesk-api-server-pro/app/middleware"
 
@@ -13,6 +14,13 @@ import (
 func SetRoute(app *iris.Application) {
 	SetClientRoute(app)
 	SetAdminRoute(app)
+	SetInternalRoute(app)
+}
+
+func SetInternalRoute(app *iris.Application) {
+	internalParty := app.Party("/internal/rustdesk")
+	internalMvc := mvc.New(internalParty)
+	internalMvc.Handle(new(rustdeskinternal.RustdeskController))
 }
 
 func SetClientRoute(app *iris.Application) {

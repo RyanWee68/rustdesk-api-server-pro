@@ -1,0 +1,17 @@
+.git
+.omx
+**/node_modules
+**/dist
+**/.vscode
+**/*.db
+**/*.db-*
+**/*.exe
+**/*.log
+**/*.pem
+**/*.key
+**/.env*
+!soybean-admin/.env
+!soybean-admin/.env.prod
+server.yaml
+data
+99_temp

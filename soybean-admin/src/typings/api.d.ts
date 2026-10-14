@@ -140,6 +140,9 @@ declare namespace Api {
       name: string;
       email: string;
       licensed_devices: number;
+      allow_remote_access: boolean;
+      allow_relay: boolean;
+      authorized_until: string;
       login_verify: string;
       tfa_secret: string;
       note: string;
@@ -186,15 +189,27 @@ declare namespace Api {
 
   namespace Devices {
     type Device = Common.CommonRecord<{
+      id: number;
+      user_id?: number;
       rustdesk_id: string;
       hostname: string;
       username: string;
+      rustdesk_username?: string;
+      rustdesk_nickname?: string;
       uuid: string;
+      fingerprint?: string;
       version: string;
+      client_version?: string;
       os: string;
       cpu?: string;
       memory: string;
       disabled?: boolean;
+      disabled_reason?: string;
+      approval_status?: 'pending' | 'approved' | 'rejected' | 'disabled';
+      allow_relay?: boolean;
+      authorized_until?: string;
+      last_seen_at?: string;
+      last_source_ip?: string;
       is_online?: boolean;
       conns?: number;
       updated_at?: string;
@@ -281,6 +296,23 @@ declare namespace Api {
     type AuditFileTransferList = Common.PaginatingQueryRecord<AuditFileTransferLog>;
     type AuditFileTransferLogSearchParams = CommonType.RecordNullable<
       Pick<Api.Audit.AuditFileTransferLog, 'rustdesk_id' | 'peer_id' | 'uuid' | 'type' | 'created_at'> &
+        Api.Common.CommonSearchParams
+    >;
+
+    type AdmissionAuditLog = Common.CommonRecord<{
+      action: string;
+      rustdesk_id: string;
+      request: string;
+      response: string;
+      ip: string;
+      user_agent: string;
+      result: 'allow' | 'deny' | 'error';
+      code: string;
+      error_message: string;
+    }>;
+    type AdmissionAuditLogList = Common.PaginatingQueryRecord<AdmissionAuditLog>;
+    type AdmissionAuditLogSearchParams = CommonType.RecordNullable<
+      Pick<Api.Audit.AdmissionAuditLog, 'action' | 'rustdesk_id' | 'result' | 'code' | 'created_at'> &
         Api.Common.CommonSearchParams
     >;
 

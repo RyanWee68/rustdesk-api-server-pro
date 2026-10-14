@@ -1,0 +1,180 @@
+name: 受控部署回归检查
+run-name: 受控部署回归检查（${{ github.ref_name }}）
+
+on:
+  push:
+    branches: ["main", "develop"]
+    paths:
+      - "backend/**"
+      - "soybean-admin/**"
+      - "docker/**"
+      - "scripts/deploy/controlled-*.sh"
+      - "scripts/deploy/controlled-*.py"
+      - "templates/rustdesk-server-controlled/**"
+      - "patches/rustdesk-server/**"
+      - "Dockerfile.controlled"
+      - "Dockerfile.controlled-server"
+      - "Dockerfile.controlled-api"
+      - "docker-compose.controlled*.yaml"
+      - ".github/workflows/controlled-deployment.yml"
+      - ".github/workflows/controlled-release.yml"
+  pull_request:
+    branches: ["main", "develop"]
+    paths:
+      - "backend/**"
+      - "soybean-admin/**"
+      - "docker/**"
+      - "scripts/deploy/controlled-*.sh"
+      - "scripts/deploy/controlled-*.py"
+      - "templates/rustdesk-server-controlled/**"
+      - "patches/rustdesk-server/**"
+      - "Dockerfile.controlled"
+      - "Dockerfile.controlled-server"
+      - "Dockerfile.controlled-api"
+      - "docker-compose.controlled*.yaml"
+      - ".github/workflows/controlled-deployment.yml"
+      - ".github/workflows/controlled-release.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: controlled-deployment-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  server-fork:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v5
+      - name: 准备 Rust 构建依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libclang-dev libsodium-dev libsqlite3-dev pkg-config ripgrep
+          rustup toolchain install 1.99.0 --profile minimal
+      - name: 获取固定官方基线
+        run: |
+          git init "${RUNNER_TEMP}/rustdesk-server"
+          git -C "${RUNNER_TEMP}/rustdesk-server" remote add origin https://github.com/rustdesk/rustdesk-server.git
+          git -C "${RUNNER_TEMP}/rustdesk-server" fetch --depth 1 origin a7736be5e40f85bfc141120dce587e836e5d4b80
+          git -C "${RUNNER_TEMP}/rustdesk-server" checkout --detach FETCH_HEAD
+          git -C "${RUNNER_TEMP}/rustdesk-server" submodule update --init --depth 1 libs/hbb_common
+      - name: 应用补丁并检查源码
+        run: |
+          sh scripts/deploy/controlled-fork-apply.sh "${RUNNER_TEMP}/rustdesk-server"
+          sh scripts/deploy/controlled-server-source-check.sh "${RUNNER_TEMP}/rustdesk-server"
+      - name: 编译检查 hbbs 和 hbbr
+        run: cargo +1.99.0 check --bins --manifest-path "${RUNNER_TEMP}/rustdesk-server/Cargo.toml"
+      - name: 执行 server 库回归
+        working-directory: ${{ runner.temp }}/rustdesk-server
+        run: cargo +1.99.0 test --jobs 2 --locked --release --lib
+  real-three-containers:
+    needs: [server-fork, acceptance]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v5
+      - name: 准备协议探针依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsodium23
+          docker pull alpine:3.20.3
+      - name: 构建真实受控镜像
+        run: |
+          docker build -f Dockerfile.controlled-server -t rustdesk-controlled-server:ci .
+          docker build -f Dockerfile.controlled --build-arg RUSTDESK_CONTROLLED_SERVER_IMAGE=rustdesk-controlled-server:ci -t rustdesk-controlled-all:ci .
+          docker build -f Dockerfile.controlled-api --build-arg RUSTDESK_CONTROLLED_IMAGE=rustdesk-controlled-all:ci -t rustdesk-controlled-api:ci .
+      - name: 前端增量镜像契约回归
+        run: |
+          context="${RUNNER_TEMP}/controlled-api-frontend"
+          mkdir -p "$context"
+          container="$(docker create rustdesk-controlled-api:ci)"
+          trap 'docker rm "$container" >/dev/null' EXIT
+          docker cp "$container:/app/dist/." "$context/"
+          docker build --network=none -f docker/Dockerfile.controlled-api-frontend --build-arg RUSTDESK_API_BASE_IMAGE=rustdesk-controlled-api:ci -t rustdesk-controlled-api:frontend-ci "$context"
+          before="$(docker run --rm --network none --entrypoint sha256sum rustdesk-controlled-api:ci /app/rustdesk-api-server-pro /app/server.yaml)"
+          after="$(docker run --rm --network none --entrypoint sha256sum rustdesk-controlled-api:frontend-ci /app/rustdesk-api-server-pro /app/server.yaml)"
+          test "$before" = "$after"
+      - name: 正式三容器最终配置预检
+        run: |
+          export ADMIN_USER=controlledtest
+          export ADMIN_PASS="$(sh scripts/deploy/controlled-key-rotation.sh generate-internal-secret)"
+          export RUSTDESK_API_INTERNAL_SECRET="$(sh scripts/deploy/controlled-key-rotation.sh generate-internal-secret)"
+          export RUSTDESK_API_IMAGE="$(docker image inspect --format '{{.Id}}' rustdesk-controlled-api:ci)"
+          export RUSTDESK_CONTROLLED_SERVER_IMAGE="$(docker image inspect --format '{{.Id}}' rustdesk-controlled-server:ci)"
+          python3 scripts/deploy/controlled-compose-preflight.py docker-compose.controlled.yaml
+      - name: 三容器协议、API 故障及持久化验收
+        run: sudo env RUSTDESK_API_IMAGE="$RUSTDESK_API_IMAGE" RUSTDESK_CONTROLLED_SERVER_IMAGE="$RUSTDESK_CONTROLLED_SERVER_IMAGE" sh scripts/deploy/controlled-three-compose-smoke.sh .
+        env:
+          RUSTDESK_API_IMAGE: rustdesk-controlled-api:frontend-ci
+          RUSTDESK_CONTROLLED_SERVER_IMAGE: rustdesk-controlled-server:ci
+  rust-template:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v5
+      - name: 准备已验证的 Rust 工具链
+        run: rustup toolchain install 1.99.0 --profile minimal
+      - name: 在临时目录执行准入客户端测试
+        run: |
+          mkdir -p "${RUNNER_TEMP}/controlled-rust-template"
+          cp templates/rustdesk-server-controlled/Cargo.toml templates/rustdesk-server-controlled/controlled_admission.rs "${RUNNER_TEMP}/controlled-rust-template/"
+          cargo +1.99.0 test --manifest-path "${RUNNER_TEMP}/controlled-rust-template/Cargo.toml"
+  acceptance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v5
+
+      - name: 配置 Go 环境
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.25.x"
+          cache: true
+          cache-dependency-path: backend/go.sum
+
+      - name: 配置 pnpm
+        uses: pnpm/action-setup@v6.0.9
+        with:
+          version: 9
+
+      - name: 配置 Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: soybean-admin/pnpm-lock.yaml
+
+      - name: 安装前端依赖
+        working-directory: soybean-admin
+        run: pnpm install --frozen-lockfile
+
+      - name: 后端测试与构建
+        working-directory: backend
+        run: |
+          go test ./...
+          go build -o "${RUNNER_TEMP}/rustdesk-api-server-pro" .
+
+      - name: 前端类型检查与构建
+        working-directory: soybean-admin
+        run: |
+          pnpm typecheck
+          pnpm test:admission-audit
+          pnpm build
+
+      - name: 本地综合验收
+        run: sh scripts/deploy/controlled-local-acceptance.sh .
+        env:
+          RUN_LOCAL_API_SMOKE: "0"
+
+      - name: Compose 流程回归
+        run: bash scripts/deploy/controlled-compose-regression.sh .
+
+      - name: 临时 API 准入验收
+        run: sh scripts/deploy/controlled-api-smoke.sh .
