@@ -26,66 +26,70 @@ have_cmd() {
 http_post() {
     url="$1"
     secret="$2"
-    body='{"rustdesk_id":"preflight-device","device_fingerprint":"preflight-fingerprint","client_version":"preflight"}'
+    body='{}'
     if [ -n "$secret" ]; then
-        curl -sS -m "${HTTP_TIMEOUT_SECONDS:-5}" \
+        curl -sS -m "${HTTP_TIMEOUT_SECONDS:-5}" -w '\n%{http_code}' \
             -H "Content-Type: application/json" \
             -H "X-Internal-Secret: $secret" \
             -d "$body" \
             "$url"
     else
-        curl -sS -m "${HTTP_TIMEOUT_SECONDS:-5}" \
+        curl -sS -m "${HTTP_TIMEOUT_SECONDS:-5}" -w '\n%{http_code}' \
             -H "Content-Type: application/json" \
             -d "$body" \
             "$url"
     fi
 }
 
+check_internal_response() {
+    url="$1"
+    secret="$2"
+    expected_status="$3"
+    expected_code="$4"
+    label="$5"
+
+    if ! result="$(http_post "$url" "$secret" 2>/dev/null)"; then
+        fail "$label 请求失败，请确认 API 是否运行：$url"
+        return
+    fi
+    status="$(printf '%s\n' "$result" | tail -n 1)"
+    response="$(printf '%s\n' "$result" | sed '$d')"
+    if [ "$status" != "$expected_status" ]; then
+        fail "$label 返回 HTTP $status，预期 $expected_status"
+        return
+    fi
+    if ! printf '%s' "$response" | "$json_parser" -c \
+        'import json,sys; data=json.load(sys.stdin); raise SystemExit(0 if data.get("allow") is False and data.get("code") == sys.argv[1] else 1)' \
+        "$expected_code" >/dev/null 2>&1; then
+        fail "$label 未返回 allow=false 和 $expected_code"
+        return
+    fi
+    pass "$label"
+}
+
 check_internal_api_auth() {
     api_base="${API_BASE_URL:-http://127.0.0.1:12345}"
-    url="$api_base/internal/rustdesk/device/register"
+    url="$api_base/internal/rustdesk/auth"
 
     if ! have_cmd curl; then
         warn "未找到 curl，跳过内部准入接口鉴权检查"
         return
     fi
+    json_parser=""
+    if have_cmd python3 && python3 --version >/dev/null 2>&1; then
+        json_parser="python3"
+    elif have_cmd python && python --version >/dev/null 2>&1; then
+        json_parser="python"
+    else
+        fail "未找到可执行的 python3/python，无法严格解析内部接口响应"
+        return
+    fi
 
-    no_secret_response="$(http_post "$url" "" 2>/dev/null || true)"
-    case "$no_secret_response" in
-        *ERR-2301*|*ERR2301*)
-            pass "内部接口未携带密钥时拒绝访问"
-            ;;
-        "")
-            fail "内部接口无密钥请求没有得到可识别响应，请确认 API 是否运行：$url"
-            ;;
-        *)
-            fail "内部接口无密钥请求未返回 ERR-2301"
-            ;;
-    esac
-
-    wrong_secret_response="$(http_post "$url" "wrong-internal-secret-for-security-check" 2>/dev/null || true)"
-    case "$wrong_secret_response" in
-        *ERR-2301*|*ERR2301*)
-            pass "内部接口错误密钥时拒绝访问"
-            ;;
-        "")
-            fail "内部接口错误密钥请求没有得到可识别响应，请确认 API 是否运行：$url"
-            ;;
-        *)
-            fail "内部接口错误密钥请求未返回 ERR-2301"
-            ;;
-    esac
+    check_internal_response "$url" "" 401 "ERR-2301" "内部接口未携带密钥时拒绝访问"
+    check_internal_response "$url" "wrong-internal-secret-for-security-check" 401 "ERR-2301" "内部接口错误密钥时拒绝访问"
 
     if [ -n "${RUSTDESK_API_INTERNAL_SECRET:-}" ]; then
-        correct_response="$(http_post "$url" "$RUSTDESK_API_INTERNAL_SECRET" 2>/dev/null || true)"
-        case "$correct_response" in
-            *ERR-2301*|*ERR2301*|"")
-                fail "内部接口正确密钥未进入准入逻辑"
-                ;;
-            *)
-                pass "内部接口正确密钥可以进入准入逻辑"
-                ;;
-        esac
+        check_internal_response "$url" "$RUSTDESK_API_INTERNAL_SECRET" 200 "ERR-2302" "内部接口正确密钥进入准入逻辑"
     else
         warn "未设置 RUSTDESK_API_INTERNAL_SECRET，跳过正确密钥路径检查"
     fi

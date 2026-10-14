@@ -105,4 +105,61 @@ pass "RustDesk server key 强制轮换保护"
 )
 pass "配置更新、缺失字段及空配置段缩进回归"
 
+FAKE_BIN="$WORK_DIR/fake-bin"
+mkdir -p "$FAKE_BIN"
+cat > "$FAKE_BIN/curl" <<'EOF'
+#!/bin/sh
+secret=""
+url=""
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -H)
+            shift
+            case "$1" in
+                "X-Internal-Secret: "*) secret="${1#X-Internal-Secret: }" ;;
+            esac
+            ;;
+        http://*|https://*) url="$1" ;;
+    esac
+    shift
+done
+printf '%s\n' "$url" >> "$MOCK_CURL_LOG"
+case "$secret" in
+    ""|wrong-internal-secret-for-security-check)
+        printf '{"allow":false,"code":"ERR-2301"}\n401\n'
+        ;;
+    fixture-secret)
+        if [ "${MOCK_CORRECT_MODE:-ok}" = "http500" ]; then
+            printf '<html>upstream error</html>\n500\n'
+        elif [ "${MOCK_CORRECT_MODE:-ok}" = "spoof" ]; then
+            printf '<html>"allow":false "code":"ERR-2302"</html>\n200\n'
+        else
+            printf '{"allow":false,"code":"ERR-2302"}\n200\n'
+        fi
+        ;;
+esac
+EOF
+chmod +x "$FAKE_BIN/curl"
+
+MOCK_CURL_LOG="$WORK_DIR/curl.log" PATH="$FAKE_BIN:$PATH" \
+    API_BASE_URL="http://api.test" RUSTDESK_API_INTERNAL_SECRET="fixture-secret" \
+    sh "$ROOT_DIR/scripts/deploy/controlled-security-check.sh" >"$WORK_DIR/security-good.log" 2>&1
+grep -q '/internal/rustdesk/auth$' "$WORK_DIR/curl.log" || fail "安全检查未调用无副作用鉴权端点"
+grep -q '/device/register' "$WORK_DIR/curl.log" && fail "安全检查仍调用会写入设备的注册端点"
+
+if MOCK_CURL_LOG="$WORK_DIR/curl-http500.log" MOCK_CORRECT_MODE=http500 PATH="$FAKE_BIN:$PATH" \
+    API_BASE_URL="http://api.test" RUSTDESK_API_INTERNAL_SECRET="fixture-secret" \
+    sh "$ROOT_DIR/scripts/deploy/controlled-security-check.sh" >"$WORK_DIR/security-http500.log" 2>&1; then
+    fail "安全检查不应把正确密钥路径的 HTTP 500 误判为通过"
+fi
+grep -q 'ERR-2394' "$WORK_DIR/security-http500.log" || fail "安全检查 HTTP 失败路径缺少 ERR-2394"
+
+if MOCK_CURL_LOG="$WORK_DIR/curl-spoof.log" MOCK_CORRECT_MODE=spoof PATH="$FAKE_BIN:$PATH" \
+    API_BASE_URL="http://api.test" RUSTDESK_API_INTERNAL_SECRET="fixture-secret" \
+    sh "$ROOT_DIR/scripts/deploy/controlled-security-check.sh" >"$WORK_DIR/security-spoof.log" 2>&1; then
+    fail "安全检查不应把正文中的伪造字段误判为结构化响应"
+fi
+grep -q 'ERR-2394' "$WORK_DIR/security-spoof.log" || fail "安全检查 JSON 失败路径缺少 ERR-2394"
+pass "内部 API 安全检查严格响应与无副作用回归"
+
 printf '\n受控部署工具自测通过。\n'

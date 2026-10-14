@@ -67,13 +67,19 @@ run_required "受控部署静态检查" sh "$ROOT_DIR/scripts/deploy/controlled-
 run_required "受控 Rust 模板检查" sh "$ROOT_DIR/scripts/deploy/controlled-template-check.sh" "$ROOT_DIR"
 run_required "受控部署工具自测" sh "$ROOT_DIR/scripts/deploy/controlled-tooling-selftest.sh" "$ROOT_DIR"
 
-if have_cmd python3; then
-    run_required "中继协议探针自测" python3 "$ROOT_DIR/scripts/deploy/controlled-relay-protocol-acceptance.py" --self-test
-    run_required "hbbs 协议探针自测" python3 "$ROOT_DIR/scripts/deploy/controlled-hbbs-protocol-acceptance.py" --self-test
-    run_required "SQLite 迁移演练自检" python3 "$ROOT_DIR/scripts/deploy/controlled-sqlite-migration-rehearsal.py" --self-test
-    run_required "最终 Compose 配置预检自测" python3 "$ROOT_DIR/scripts/deploy/controlled-compose-preflight.py" --self-test
+python_bin=""
+if have_cmd python3 && python3 --version >/dev/null 2>&1; then
+    python_bin="python3"
+elif have_cmd python && python --version >/dev/null 2>&1; then
+    python_bin="python"
+fi
+if [ -n "$python_bin" ]; then
+    run_required "中继协议探针自测" "$python_bin" "$ROOT_DIR/scripts/deploy/controlled-relay-protocol-acceptance.py" --self-test
+    run_required "hbbs 协议探针自测" "$python_bin" "$ROOT_DIR/scripts/deploy/controlled-hbbs-protocol-acceptance.py" --self-test
+    run_required "SQLite 迁移演练自检" "$python_bin" "$ROOT_DIR/scripts/deploy/controlled-sqlite-migration-rehearsal.py" --self-test
+    run_required "最终 Compose 配置预检自测" "$python_bin" "$ROOT_DIR/scripts/deploy/controlled-compose-preflight.py" --self-test
 else
-    skip "未检测到 python3，跳过中继协议探针自测"
+    skip "未检测到可执行的 python3/python，跳过 Python 自测"
 fi
 
 printf '\n[Shell 语法检查]\n'
