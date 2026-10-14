@@ -239,7 +239,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          image="ghcr.io/${{ github.repository_owner }}/rustdesk-api-server-pro"
+          owner="$(printf '%s' "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
+          case "$owner" in
+            ''|*[!a-z0-9._-]*)
+              echo "ERR-2394 仓库所有者不能转换为合法镜像命名空间" >&2
+              exit 1
+              ;;
+          esac
+          image="ghcr.io/${owner}/rustdesk-api-server-pro"
           image_sha="${{ steps.build_ref.outputs.image_sha }}"
           short_sha="${image_sha:0:7}"
           {
