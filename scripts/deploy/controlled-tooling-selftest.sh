@@ -162,4 +162,27 @@ fi
 grep -q 'ERR-2394' "$WORK_DIR/security-spoof.log" || fail "安全检查 JSON 失败路径缺少 ERR-2394"
 pass "内部 API 安全检查严格响应与无副作用回归"
 
+INJECTION_MARKER="$WORK_DIR/port-injection"
+if MOCK_CURL_LOG="$WORK_DIR/curl-endpoint.log" PATH="$FAKE_BIN:$PATH" \
+    API_BASE_URL="http://api.test" RUSTDESK_API_INTERNAL_SECRET="fixture-secret" \
+    PUBLIC_HOST="127.0.0.1;touch $INJECTION_MARKER;#" \
+    sh "$ROOT_DIR/scripts/deploy/controlled-security-check.sh" >"$WORK_DIR/security-endpoint.log" 2>&1; then
+    fail "安全检查不应接受包含 shell 字符的探测主机名"
+fi
+[ ! -e "$INJECTION_MARKER" ] || fail "端口探测把主机名当作 shell 语句执行"
+grep -q 'ERR-2394' "$WORK_DIR/security-endpoint.log" || fail "非法探测主机拒绝路径缺少 ERR-2394"
+grep -q '主机名包含非法字符' "$WORK_DIR/security-endpoint.log" || fail "非法探测主机未返回明确原因"
+
+if MOCK_CURL_LOG="$WORK_DIR/curl-port.log" PATH="$FAKE_BIN:$PATH" \
+    API_BASE_URL="http://api.test" RUSTDESK_API_INTERNAL_SECRET="fixture-secret" \
+    PUBLIC_HOST="127.0.0.1" RUSTDESK_HBBS_TCP_21115="70000" \
+    RUSTDESK_HBBS_TCP_21116="bad" RUSTDESK_HBBR_TCP_21117="0" \
+    FNOS_ADMIN_HTTP_PORT="70000" RUSTDESK_HBBS_WEB_PORT="bad" RUSTDESK_HBBR_WEB_PORT="0" \
+    sh "$ROOT_DIR/scripts/deploy/controlled-security-check.sh" >"$WORK_DIR/security-port.log" 2>&1; then
+    fail "安全检查不应接受无效探测端口"
+fi
+grep -q '端口不是有效数字' "$WORK_DIR/security-port.log" || fail "非数字探测端口未返回明确原因"
+grep -q '端口超出有效范围' "$WORK_DIR/security-port.log" || fail "越界探测端口未返回明确原因"
+pass "端口探测参数校验与命令注入回归"
+
 printf '\n受控部署工具自测通过。\n'

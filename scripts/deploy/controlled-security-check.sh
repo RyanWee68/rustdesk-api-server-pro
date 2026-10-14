@@ -95,10 +95,35 @@ check_internal_api_auth() {
     fi
 }
 
+validate_endpoint() {
+    host="$1"
+    port="$2"
+    label="$3"
+    case "$host" in
+        ""|*[!A-Za-z0-9._:%-]*)
+            fail "$label 的主机名包含非法字符"
+            return 1
+            ;;
+    esac
+    case "$port" in
+        ""|*[!0-9]*)
+            fail "$label 的端口不是有效数字：$port"
+            return 1
+            ;;
+    esac
+    if [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
+        fail "$label 的端口超出有效范围：$port"
+        return 1
+    fi
+}
+
 check_port_closed() {
     host="$1"
     port="$2"
     label="$3"
+    if ! validate_endpoint "$host" "$port" "$label"; then
+        return 0
+    fi
     if have_cmd nc; then
         if nc -z -w "${PORT_TIMEOUT_SECONDS:-2}" "$host" "$port" >/dev/null 2>&1; then
             fail "$label 仍可连接：$host:$port"
@@ -108,7 +133,7 @@ check_port_closed() {
         return
     fi
     if have_cmd timeout && have_cmd bash; then
-        if timeout "${PORT_TIMEOUT_SECONDS:-2}" bash -c "cat < /dev/null > /dev/tcp/$host/$port" >/dev/null 2>&1; then
+        if timeout "${PORT_TIMEOUT_SECONDS:-2}" bash -c 'cat < /dev/null > "/dev/tcp/$1/$2"' sh "$host" "$port" >/dev/null 2>&1; then
             fail "$label 仍可连接：$host:$port"
         else
             pass "$label 不可连接：$host:$port"
@@ -122,6 +147,9 @@ check_port_open() {
     host="$1"
     port="$2"
     label="$3"
+    if ! validate_endpoint "$host" "$port" "$label"; then
+        return 0
+    fi
     if have_cmd nc; then
         if nc -z -w "${PORT_TIMEOUT_SECONDS:-2}" "$host" "$port" >/dev/null 2>&1; then
             pass "$label 可连接：$host:$port"
