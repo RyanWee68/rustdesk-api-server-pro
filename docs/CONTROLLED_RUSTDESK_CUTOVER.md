@@ -10,7 +10,7 @@
 4. 新数据来自独立副本，SQLite DSN 和静态资源路径按新镜像核对；新副本轮换 signKey 和内部密钥，撤销旧登录令牌，保留 `.init.lock`、原账号和业务数据，设备不自动审批。原 OIDC 未启用、OAuth 提供者数量为 0；外部服务联调不计通过。
 5. 使用固定 API 镜像 `sha256:eb587aa52cda3c7a7618f057eca4deabe347c6472e1f62c5f2350d77f149184f` 与 server 镜像 `sha256:91746f12dbf37ff9b1ae135db24734ed593125b15cdaa533e6d4202e90036b99`。新建 server key 卷，hbbs 宣告局域网中继地址。API、新管理页与三容器健康通过。
 6. 停止新项目但不删除卷，恢复原容器名并启动；原 API 和原局域网管理页返回 200，原镜像及 YAML 摘要不变。再停止原容器、恢复保留名并启动新项目，健康通过；新数据库完整性、零自动审批、旧 token 全部撤销及脱敏、备份摘要再次核对通过。
-7. 新公钥写入 API 配置并重启 API 后健康通过，server 密钥及卷不变。2026-10-13 已确认历史隔离资源与正式挂载分离，并清理四个历史测试容器、六个测试卷和一个测试网络；正式三容器及正式数据、key、日志均保留。
+7. 新公钥写入 API 配置并重启 API 后健康通过，server 密钥及卷不变。2026-10-13 已确认历史隔离资源与正式挂载分离，并清理四个历史测试容器、六个测试卷和一个测试网络；2026-10-14 又清理三只无容器引用的旧局域网 PoC data/key/log 卷，并复核正式部署文件、API 配置与正式 key 卷公钥一致。正式三容器及正式数据、key、日志均保留。
 8. 成功后取消本次自动回滚定时器。主机私有部署目录保留 `cutover.py`、`runtime.env`、`cutover-report.json` 和 `server-public-key.txt`；操作脚本的三个回滚时序与名称冲突保护自检通过。需要回滚时，在主机使用私有部署目录中的脚本执行 `python3 cutover.py rollback`；先暂停新管理写入并保留新库，脚本不合并切换后的数据。
 
 当前容器为 `rustdesk-api-server-pro`、`rustdesk-hbbs-controlled`、`rustdesk-hbbr-controlled`；旧容器 `rustdesk-api-server-pro-precontrolled` 已删除。API、管理和原生 server 端口仅绑定主机局域网 IP，WebSocket 端口仅回环；不配置公网转发。
