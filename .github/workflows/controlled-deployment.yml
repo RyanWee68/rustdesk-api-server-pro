@@ -43,11 +43,11 @@ permissions:
 
 jobs:
   server-fork:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: 准备 Rust 构建依赖
         run: |
           sudo apt-get update
@@ -71,11 +71,11 @@ jobs:
         run: cargo +1.99.0 test --jobs 2 --locked --release --lib
   real-three-containers:
     needs: [server-fork, acceptance]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: 准备协议探针依赖
         run: |
           sudo apt-get update
@@ -111,11 +111,11 @@ jobs:
           RUSTDESK_API_IMAGE: rustdesk-controlled-api:frontend-ci
           RUSTDESK_CONTROLLED_SERVER_IMAGE: rustdesk-controlled-server:ci
   rust-template:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: 准备已验证的 Rust 工具链
         run: rustup toolchain install 1.99.0 --profile minimal
       - name: 在临时目录执行准入客户端测试
@@ -124,14 +124,14 @@ jobs:
           cp templates/rustdesk-server-controlled/Cargo.toml templates/rustdesk-server-controlled/controlled_admission.rs "${RUNNER_TEMP}/controlled-rust-template/"
           cargo +1.99.0 test --manifest-path "${RUNNER_TEMP}/controlled-rust-template/Cargo.toml"
   acceptance:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: 配置 Go 环境
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: "1.25.x"
           cache: true
@@ -143,7 +143,7 @@ jobs:
           version: 9
 
       - name: 配置 Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: pnpm
