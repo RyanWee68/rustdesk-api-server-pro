@@ -67,10 +67,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          grep -q "clean_releases:" .github/workflows/cleanup-history.yml
-          grep -A5 "clean_releases:" .github/workflows/cleanup-history.yml | grep -q "default: false"
-          grep -q "clean_tags:" .github/workflows/cleanup-history.yml
-          grep -A5 "clean_tags:" .github/workflows/cleanup-history.yml | grep -q "default: false"
+          grep -q "cleanup_target:" .github/workflows/cleanup-history.yml
+          grep -A5 "cleanup_target:" .github/workflows/cleanup-history.yml | grep -q 'default: "none"'
           grep -q "confirm.*CLEAN_TAGS\|CLEAN_TAGS" .github/workflows/cleanup-history.yml
 
       - name: 检查发布工作流包含合规文件
