@@ -177,12 +177,14 @@ if MOCK_CURL_LOG="$WORK_DIR/curl-port.log" PATH="$FAKE_BIN:$PATH" \
     API_BASE_URL="http://api.test" RUSTDESK_API_INTERNAL_SECRET="fixture-secret" \
     PUBLIC_HOST="127.0.0.1" RUSTDESK_HBBS_TCP_21115="70000" \
     RUSTDESK_HBBS_TCP_21116="bad" RUSTDESK_HBBR_TCP_21117="0" \
-    FNOS_ADMIN_HTTP_PORT="70000" RUSTDESK_HBBS_WEB_PORT="bad" RUSTDESK_HBBR_WEB_PORT="0" \
+    FNOS_ADMIN_HTTP_PORT="999999999999999999999999999999" \
+    RUSTDESK_HBBS_WEB_PORT="bad" RUSTDESK_HBBR_WEB_PORT="0" \
     sh "$ROOT_DIR/scripts/deploy/controlled-security-check.sh" >"$WORK_DIR/security-port.log" 2>&1; then
     fail "安全检查不应接受无效探测端口"
 fi
 grep -q '端口不是有效数字' "$WORK_DIR/security-port.log" || fail "非数字探测端口未返回明确原因"
 grep -q '端口超出有效范围' "$WORK_DIR/security-port.log" || fail "越界探测端口未返回明确原因"
+grep -q 'integer expression expected' "$WORK_DIR/security-port.log" && fail "超长端口触发了 shell 整数错误"
 pass "端口探测参数校验与命令注入回归"
 
 printf '\n受控部署工具自测通过。\n'

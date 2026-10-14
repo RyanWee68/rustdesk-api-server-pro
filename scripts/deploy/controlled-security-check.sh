@@ -110,6 +110,10 @@ validate_endpoint() {
             fail "$label 的端口不是有效数字：$port"
             return 1
             ;;
+        ??????*)
+            fail "$label 的端口超出有效范围：$port"
+            return 1
+            ;;
     esac
     if [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
         fail "$label 的端口超出有效范围：$port"
