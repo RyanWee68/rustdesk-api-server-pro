@@ -93,3 +93,13 @@ python3 scripts/deploy/controlled-sqlite-migration-rehearsal.py \
 ## 验收边界
 
 已完成只读清单、数据库副本迁移、原 YAML 严格解析及副本启动、迁移前快照恢复、正式端口切换、旧服务下线、原容器实机回滚，以及删除旧容器后的离线材料重建与旧 API 隔离健康检查。仍未完成独立公网扫描、外部认证配置联调、旧客户端/旧公钥恢复和切换后新旧数据合并验收。
+
+## 仅更新前端的测试部署（2026-10-14）
+
+在组件回归、类型检查、生产构建及独立浏览器验收通过后，使用 `docker/Dockerfile.controlled-api-frontend` 构建增量镜像。构建上下文只能是前端 `dist`，不可传入包含配置或临时凭据的部署目录；构建前先核对基镜像标签对应摘要，使用 `--network=none`，不修改后端或配置模板。受控部署 CI 已加入增量镜像契约回归并使用其产物执行三容器测试；新增构建步骤已在授权 Linux 上离线通过，新提交的完整远程运行仍需核对。
+
+本次基镜像为 `test-20261013-device-nickname`，ID `sha256:928f214e2a801d08d3604267152a0b171cd6db86703f809e871ca4de675b753b`；产物为 `rustdesk-controlled-api:test-20261014-audit-detail`，ID `sha256:da73ffbb9578d0821e99d1b6a7ccaa7e1fb63bd22da81aad7c5e9bf0bd8893d8`。新旧镜像中后端 SHA-256 均为 `54177b2889a76b1d1b7ce3c14f08ebba260026e7900f6a3edb4d7abfb3ce8cf1`，配置模板均为 `d60a46a30c7e1a18ee536d90eb8e00dbc22a35e4df94f782f4585ace5ecd60dc`。
+
+更新前使用 SQLite backup 保存 `data/server.db.before-audit-detail-20261014`，并备份 `runtime.env.before-audit-detail-20261014`；先确认唯一命名的五分钟回滚定时器 active，再仅替换 runtime.env 中的 API 镜像，并对 API 服务执行 `up -d --no-deps`。验证 API healthy、两个网页 HTTP 200、设备/用户权限和公钥不变、hbbs/hbbr 容器 ID 与启动时间不变后取消回滚。现用服务已保留新镜像；旧镜像与备份未删除。
+
+该更新不迁移数据 schema，不改变账号、审批、中继权限或 server 密钥，也未对本次更新补做官方客户端连接验收。回退前端可恢复本次 runtime.env 备份并仅重建 API，不应覆盖回旧数据库。

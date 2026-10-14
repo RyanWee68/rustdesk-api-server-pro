@@ -86,6 +86,17 @@ jobs:
           docker build -f Dockerfile.controlled-server -t rustdesk-controlled-server:ci .
           docker build -f Dockerfile.controlled --build-arg RUSTDESK_CONTROLLED_SERVER_IMAGE=rustdesk-controlled-server:ci -t rustdesk-controlled-all:ci .
           docker build -f Dockerfile.controlled-api --build-arg RUSTDESK_CONTROLLED_IMAGE=rustdesk-controlled-all:ci -t rustdesk-controlled-api:ci .
+      - name: 前端增量镜像契约回归
+        run: |
+          context="${RUNNER_TEMP}/controlled-api-frontend"
+          mkdir -p "$context"
+          container="$(docker create rustdesk-controlled-api:ci)"
+          trap 'docker rm "$container" >/dev/null' EXIT
+          docker cp "$container:/app/dist/." "$context/"
+          docker build --network=none -f docker/Dockerfile.controlled-api-frontend --build-arg RUSTDESK_API_BASE_IMAGE=rustdesk-controlled-api:ci -t rustdesk-controlled-api:frontend-ci "$context"
+          before="$(docker run --rm --network none --entrypoint sha256sum rustdesk-controlled-api:ci /app/rustdesk-api-server-pro /app/server.yaml)"
+          after="$(docker run --rm --network none --entrypoint sha256sum rustdesk-controlled-api:frontend-ci /app/rustdesk-api-server-pro /app/server.yaml)"
+          test "$before" = "$after"
       - name: 正式三容器最终配置预检
         run: |
           export ADMIN_USER=controlledtest
@@ -97,7 +108,7 @@ jobs:
       - name: 三容器协议、API 故障及持久化验收
         run: sudo env RUSTDESK_API_IMAGE="$RUSTDESK_API_IMAGE" RUSTDESK_CONTROLLED_SERVER_IMAGE="$RUSTDESK_CONTROLLED_SERVER_IMAGE" sh scripts/deploy/controlled-three-compose-smoke.sh .
         env:
-          RUSTDESK_API_IMAGE: rustdesk-controlled-api:ci
+          RUSTDESK_API_IMAGE: rustdesk-controlled-api:frontend-ci
           RUSTDESK_CONTROLLED_SERVER_IMAGE: rustdesk-controlled-server:ci
   rust-template:
     runs-on: ubuntu-latest

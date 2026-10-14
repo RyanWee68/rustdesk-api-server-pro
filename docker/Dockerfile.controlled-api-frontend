@@ -1,0 +1,7 @@
+# 仅更新已验证的前端产物；构建前核对基镜像摘要，上下文使用前端 dist 目录。
+ARG RUSTDESK_API_BASE_IMAGE=rustdesk-controlled-api:must-provide
+FROM ${RUSTDESK_API_BASE_IMAGE}
+COPY . /app/dist/
+RUN test "$CONTROLLED_API_ONLY" = 1 \
+    && test -x /app/rustdesk-api-server-pro \
+    && test -s /app/dist/index.html
