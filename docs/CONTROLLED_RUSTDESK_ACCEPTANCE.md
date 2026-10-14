@@ -7,8 +7,9 @@
 - 新增仅手工触发的 `受控镜像发布` 工作流。默认只构建受控 server/API 镜像并执行真实三容器协议、API 故障和持久化验收，不推送镜像。
 - 明确选择发布后，只向 GHCR 推送绑定完整提交 SHA 的 `rustdesk-controlled-server` 与 `rustdesk-controlled-api` 标签，不生成或覆盖 `latest`、分支名及可变版本标签；镜像摘要取得失败以 `ERR-2394` 终止。
 - 每个已推送摘要分别交由 GitHub artifact attestation 生成并写入注册表的供应链证明，随后用 GitHub CLI 对两个 OCI 镜像执行证明验证。工作流使用仓库内置 `GITHUB_TOKEN`，不新增 PAT、密码或私钥。
+- 证明验证通过后，第二个全新 Linux 运行器仅取得 `contents: read` 与 `packages: read`，按镜像摘要重新拉取 server/API，并再次执行真实三容器验收；它不复用构建作业的 Docker 缓存或本地镜像。
 - 固定版本 `actionlint` 对发布与受控回归工作流校验通过；提交 `d427eb1` 的[受控部署回归 38536640622](https://github.com/RyanWee68/rustdesk-api-server-pro/actions/runs/38536640622) 四个作业全部成功：server fork `8m39s`、综合验收 `4m25s`、Rust 模板 `32s`、真实三容器 `11m12s`。
-- 本项目前仅完成流程实现，尚未实际触发发布，因此 GHCR 包写权限、镜像摘要、证明验证和独立主机拉取仍标记为未验证。
+- 本项目前仅完成流程实现，尚未实际触发发布，因此 GHCR 包写权限、镜像摘要、证明验证和独立运行器拉取仍标记为未验证；该运行器也不能替代用户控制的独立物理主机离线导入。
 
 ## 公钥清单与遗留 PoC 卷清理（2026-10-14）
 

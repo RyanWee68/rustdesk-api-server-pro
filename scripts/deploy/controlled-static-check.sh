@@ -169,11 +169,15 @@ check_release_workflow() {
         contains "$file" 'uses: actions/attest@v4' &&
         contains "$file" 'push-to-registry: true' &&
         [ "$(grep -Ec 'gh attestation verify.*oci://' "$file")" -eq 2 ] &&
+        contains "$file" '^  registry-pull-smoke:' &&
+        contains "$file" 'needs: build-test-publish' &&
+        contains "$file" 'packages: read' &&
+        contains "$file" 'docker pull "\$image"' &&
         contains "$file" 'attestations: write' &&
         contains "$file" 'id-token: write'; then
-        pass "受控镜像发布前验收并生成、验证注册表证明"
+        pass "受控镜像发布前验收，生成并验证证明，再由独立运行器按摘要拉取验收"
     else
-        fail "受控镜像发布流程缺少三容器验收或供应链证明生成验证"
+        fail "受控镜像发布流程缺少发布前验收、证明生成验证或独立运行器拉取验收"
     fi
 
     if contains "$file" 'rustdesk-controlled-server' &&

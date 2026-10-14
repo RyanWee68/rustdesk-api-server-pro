@@ -10,11 +10,7 @@ on:
         default: false
         type: boolean
 
-permissions:
-  contents: read
-  packages: write
-  attestations: write
-  id-token: write
+permissions: {}
 
 concurrency:
   group: controlled-release-${{ github.ref }}
@@ -24,6 +20,17 @@ jobs:
   build-test-publish:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    outputs:
+      server_image: ${{ steps.image.outputs.server }}
+      api_image: ${{ steps.image.outputs.api }}
+      image_tag: ${{ steps.image.outputs.tag }}
+      server_digest: ${{ steps.publish.outputs.server_digest }}
+      api_digest: ${{ steps.publish.outputs.api_digest }}
     steps:
       - name: 检出代码
         uses: actions/checkout@v5
@@ -137,3 +144,44 @@ jobs:
           set -euo pipefail
           gh attestation verify "oci://${SERVER_REF}" --repo "$GITHUB_REPOSITORY"
           gh attestation verify "oci://${API_REF}" --repo "$GITHUB_REPOSITORY"
+
+  registry-pull-smoke:
+    if: inputs.publish_image
+    needs: build-test-publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    env:
+      RUSTDESK_CONTROLLED_SERVER_IMAGE: ${{ needs.build-test-publish.outputs.server_image }}@${{ needs.build-test-publish.outputs.server_digest }}
+      RUSTDESK_API_IMAGE: ${{ needs.build-test-publish.outputs.api_image }}@${{ needs.build-test-publish.outputs.api_digest }}
+    steps:
+      - name: 检出验收工具
+        uses: actions/checkout@v5
+
+      - name: 登录 GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 在全新运行器按摘要拉取镜像
+        shell: bash
+        run: |
+          set -euo pipefail
+          for image in "$RUSTDESK_CONTROLLED_SERVER_IMAGE" "$RUSTDESK_API_IMAGE"; do
+            if ! docker pull "$image"; then
+              echo "ERR-2394 独立运行器无法按摘要拉取受控镜像" >&2
+              exit 1
+            fi
+          done
+
+      - name: 独立运行器三容器验收
+        shell: bash
+        run: |
+          sudo env \
+            RUSTDESK_API_IMAGE="$RUSTDESK_API_IMAGE" \
+            RUSTDESK_CONTROLLED_SERVER_IMAGE="$RUSTDESK_CONTROLLED_SERVER_IMAGE" \
+            sh scripts/deploy/controlled-three-compose-smoke.sh .
