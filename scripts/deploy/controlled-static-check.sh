@@ -168,11 +168,12 @@ check_release_workflow() {
     if contains "$file" 'controlled-three-compose-smoke\.sh' &&
         contains "$file" 'uses: actions/attest@v4' &&
         contains "$file" 'push-to-registry: true' &&
+        [ "$(grep -Ec 'gh attestation verify.*oci://' "$file")" -eq 2 ] &&
         contains "$file" 'attestations: write' &&
         contains "$file" 'id-token: write'; then
-        pass "受控镜像发布前验收并为摘要生成注册表证明"
+        pass "受控镜像发布前验收并生成、验证注册表证明"
     else
-        fail "受控镜像发布流程缺少三容器验收或供应链证明"
+        fail "受控镜像发布流程缺少三容器验收或供应链证明生成验证"
     fi
 
     if contains "$file" 'rustdesk-controlled-server' &&

@@ -125,3 +125,15 @@ jobs:
           subject-name: ${{ steps.image.outputs.api }}
           subject-digest: ${{ steps.publish.outputs.api_digest }}
           push-to-registry: true
+
+      - name: 验证已发布镜像证明
+        if: inputs.publish_image
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SERVER_REF: ${{ steps.image.outputs.server }}:${{ steps.image.outputs.tag }}
+          API_REF: ${{ steps.image.outputs.api }}:${{ steps.image.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh attestation verify "oci://${SERVER_REF}" --repo "$GITHUB_REPOSITORY"
+          gh attestation verify "oci://${API_REF}" --repo "$GITHUB_REPOSITORY"
