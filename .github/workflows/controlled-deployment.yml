@@ -17,6 +17,7 @@ on:
       - "Dockerfile.controlled-api"
       - "docker-compose.controlled*.yaml"
       - ".github/workflows/controlled-deployment.yml"
+      - ".github/workflows/controlled-release.yml"
   pull_request:
     branches: ["main", "develop"]
     paths:
@@ -32,6 +33,7 @@ on:
       - "Dockerfile.controlled-api"
       - "docker-compose.controlled*.yaml"
       - ".github/workflows/controlled-deployment.yml"
+      - ".github/workflows/controlled-release.yml"
   workflow_dispatch:
 
 concurrency:

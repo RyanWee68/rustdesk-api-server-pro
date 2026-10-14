@@ -146,6 +146,45 @@ check_server_dockerfile() {
     fi
 }
 
+check_release_workflow() {
+    file="$1"
+    require_file "$file"
+    [ -f "$file" ] || return
+
+    if contains "$file" '^[[:space:]]+workflow_dispatch:$' &&
+        ! contains "$file" '^[[:space:]]+(push|pull_request|schedule):$'; then
+        pass "受控镜像仅允许手工触发发布流程"
+    else
+        fail "受控镜像发布流程包含非手工触发入口"
+    fi
+
+    if contains "$file" 'tag=sha-\$\{GITHUB_SHA\}' &&
+        ! contains "$file" '(^|:)latest([[:space:]]|$)'; then
+        pass "受控镜像仅生成完整提交 SHA 标签"
+    else
+        fail "受控镜像发布流程包含可变或非完整提交标签"
+    fi
+
+    if contains "$file" 'controlled-three-compose-smoke\.sh' &&
+        contains "$file" 'uses: actions/attest@v4' &&
+        contains "$file" 'push-to-registry: true' &&
+        contains "$file" 'attestations: write' &&
+        contains "$file" 'id-token: write'; then
+        pass "受控镜像发布前验收并为摘要生成注册表证明"
+    else
+        fail "受控镜像发布流程缺少三容器验收或供应链证明"
+    fi
+
+    if contains "$file" 'rustdesk-controlled-server' &&
+        contains "$file" 'rustdesk-controlled-api' &&
+        contains "$file" 'password: \$\{\{ secrets\.GITHUB_TOKEN \}\}' &&
+        ! contains "$file" 'GHCR_TOKEN|personal.access.token|PAT'; then
+        pass "受控镜像发布使用仓库令牌且不声明额外凭据"
+    else
+        fail "受控镜像发布目标或凭据边界不符合要求"
+    fi
+}
+
 check_compose() {
     file="$1"
     label="$2"
@@ -292,6 +331,7 @@ check_dockerfile "$ROOT_DIR/Dockerfile.controlled"
 check_api_dockerfile "$ROOT_DIR/Dockerfile.controlled-api"
 check_build_context "$ROOT_DIR/.dockerignore"
 check_server_dockerfile "$ROOT_DIR/Dockerfile.controlled-server"
+check_release_workflow "$ROOT_DIR/.github/workflows/controlled-release.yml"
 check_compose "$ROOT_DIR/docker-compose.controlled.yaml" "三容器 Compose"
 check_compose "$ROOT_DIR/docker-compose.controlled-one.yaml" "一体化 Compose"
 check_entrypoint "$ROOT_DIR/docker/controlled-entrypoint.sh"
