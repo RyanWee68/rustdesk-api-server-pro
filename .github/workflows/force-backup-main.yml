@@ -15,7 +15,7 @@ permissions:
 jobs:
   overwrite-backup:
     name: main 强制覆盖 backup
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       BACKUP_PUSH_TOKEN: ${{ secrets.BACKUP_PUSH_TOKEN }}
       DEFAULT_PUSH_TOKEN: ${{ github.token }}
@@ -44,7 +44,7 @@ jobs:
 
       - name: 检出 main
         if: steps.confirm.outputs.should_run == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: main
           fetch-depth: 0

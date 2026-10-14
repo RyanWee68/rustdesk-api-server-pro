@@ -30,16 +30,16 @@ permissions:
 jobs:
   backend-compat:
     name: 后端兼容性检查
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: backend
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: 配置 Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: '1.23.x'
           cache-dependency-path: backend/go.sum
@@ -52,10 +52,10 @@ jobs:
 
   scripts-compat:
     name: 兼容脚本检查
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: 检查 Shell 脚本语法
         run: |
@@ -73,10 +73,10 @@ jobs:
 
   docker-smoke:
     name: Docker 冒烟测试
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: 构建 Docker 镜像
         run: docker build --build-arg APP_VERSION=compat-ci -t rustdesk-api-server-pro:compat-ci .

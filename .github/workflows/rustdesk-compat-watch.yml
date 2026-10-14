@@ -14,14 +14,14 @@ permissions:
 
 jobs:
   check-rustdesk-release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       needs_update: ${{ steps.check.outputs.needs_update }}
       current_version: ${{ steps.check.outputs.current_version }}
       latest_tag: ${{ steps.check.outputs.latest_tag }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Check latest RustDesk release
         id: check
@@ -39,13 +39,13 @@ jobs:
   create-compatibility-pr:
     needs: check-rustdesk-release
     if: needs.check-rustdesk-release.outputs.needs_update == 'true' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
       pull-requests: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Re-check latest RustDesk release
         id: check

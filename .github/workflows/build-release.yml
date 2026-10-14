@@ -31,7 +31,7 @@ permissions:
   
 jobs:
   prepare:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       tag_name: ${{ steps.release.outputs.tag_name }}
       target_sha: ${{ steps.release.outputs.target_sha }}
@@ -39,7 +39,7 @@ jobs:
       prerelease: ${{ steps.release.outputs.prerelease }}
     steps:
       - name: 检出发布来源
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.target_ref || github.ref }}
 
@@ -87,19 +87,19 @@ jobs:
 
   build:
     needs: prepare
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         os: [linux, windows, darwin]
         arch: [amd64, arm64]
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ needs.prepare.outputs.target_sha }}
 
       - name: 配置 Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 20
 
@@ -109,7 +109,7 @@ jobs:
           version: 9
 
       - name: 配置 Go 环境
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: '>=1.23.1'
           cache: false
@@ -157,25 +157,25 @@ jobs:
           zip -r ${{matrix.os}}-${{matrix.arch}}.zip build
 
       - name: 上传构建产物
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: release-${{ matrix.os }}-${{ matrix.arch }}
           path: ${{matrix.os}}-${{matrix.arch}}.zip
           if-no-files-found: error
 
   release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [prepare, build]
     permissions:
       contents: write
     steps:
       - name: 检出发布模板
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ needs.prepare.outputs.target_sha }}
 
       - name: 下载全部构建产物
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: release-assets
           merge-multiple: true
