@@ -313,6 +313,23 @@ check_healthcheck() {
     fi
 }
 
+check_linux_line_endings() {
+    cr="$(printf '\r')"
+    for file in \
+        "$ROOT_DIR"/Dockerfile.controlled* \
+        "$ROOT_DIR"/docker-compose.controlled*.yaml \
+        "$ROOT_DIR"/docker/*.sh \
+        "$ROOT_DIR"/scripts/deploy/*.sh \
+        "$ROOT_DIR"/scripts/deploy/*.py \
+        "$ROOT_DIR"/templates/*.yaml; do
+        if LC_ALL=C grep -q "$cr" "$file"; then
+            fail "Linux 部署文件包含 CRLF：$file"
+            return
+        fi
+    done
+    pass "Linux 构建、部署和验收文件均使用 LF"
+}
+
 ROOT_DIR="${1:-$(pwd)}"
 
 check_dockerfile "$ROOT_DIR/Dockerfile.controlled"
@@ -324,6 +341,7 @@ check_compose "$ROOT_DIR/docker-compose.controlled.yaml" "三容器 Compose"
 check_compose "$ROOT_DIR/docker-compose.controlled-one.yaml" "一体化 Compose"
 check_entrypoint "$ROOT_DIR/docker/controlled-entrypoint.sh"
 check_healthcheck "$ROOT_DIR/docker/controlled-healthcheck.sh"
+check_linux_line_endings
 
 if [ "$failures" -gt 0 ]; then
     printf '\n受控部署静态检查未通过：%s 项失败，%s 项警告。\n' "$failures" "$warnings" >&2

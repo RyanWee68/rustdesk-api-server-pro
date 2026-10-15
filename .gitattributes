@@ -1,1 +1,11 @@
 *.go text eol=lf
+
+# Linux 构建和部署入口必须保持 LF，避免 Windows 归档后容器启动失败。
+Dockerfile.controlled* text eol=lf
+.dockerignore text eol=lf
+.github/workflows/controlled-release.yml text eol=lf
+docker-compose.controlled*.yaml text eol=lf
+docker/*.sh text eol=lf
+scripts/deploy/*.sh text eol=lf
+scripts/deploy/*.py text eol=lf
+templates/*.yaml text eol=lf

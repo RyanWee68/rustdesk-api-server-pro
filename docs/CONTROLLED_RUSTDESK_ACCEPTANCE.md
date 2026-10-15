@@ -294,7 +294,7 @@ API 和账号策略恢复后，用户在发起端 `487921466` 正常退出客户
 | 后端构建 | `go build`，另以 `CGO_ENABLED=0` 构建 | 已通过（2026-10-09，本地及 Linux 镜像） | 本地产物位于仓库外；一体化镜像已完成 Linux Go 编译 |
 | 前端构建 | `pnpm --dir soybean-admin build` | 已通过（2026-10-09，本地） | 类型检查也通过；受限沙箱中的符号链接解析曾失败，正常本机权限复验通过 |
 | Shell 语法检查 | 本地聚合验收逐个运行 `sh -n` | 已通过（2026-10-09，本地） | 受控部署相关脚本均通过 |
-| 静态部署检查 | `scripts/deploy/controlled-static-check.sh .` | 已通过（2026-10-09，本地） | 包含固定 server 镜像定义、Debian 运行基底、管理员凭据及三容器 API 镜像强制指定；0 警告 |
+| 静态部署检查 | `scripts/deploy/controlled-static-check.sh .` | 已通过（2026-10-15，授权 Linux 主机） | 包含固定 server 镜像定义、Debian 运行基底、管理员凭据及三容器 API 镜像强制指定；候选归档和提交后的普通归档均为 0 警告，CRLF 负向回归以 `ERR-2396` 拒绝 |
 | Rust 准入模板检查 | `scripts/deploy/controlled-template-check.sh .` | 已通过（2026-10-09，本地） | 内部 API 路径、环境变量、拒绝路径和敏感日志静态检查 |
 | Rust 客户端编译与 HTTP 回归 | 隔离副本执行 `cargo test` | 已通过（2026-10-09，本地复验） | Rust 1.99.0，7 组测试；新增中继签发/核销 API 断联和伪造允许响应拒绝路径 |
 | 固定 server 补丁重放 | `controlled-fork-apply.sh` | 已通过（2026-10-08，本地） | 干净官方 commit `a7736be5` 与子模块 `69cea8da` |
