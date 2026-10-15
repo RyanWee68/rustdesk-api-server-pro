@@ -153,40 +153,23 @@ check_release_workflow() {
 
     if contains "$file" '^[[:space:]]+workflow_dispatch:$' &&
         ! contains "$file" '^[[:space:]]+(push|pull_request|schedule):$'; then
-        pass "受控镜像仅允许手工触发发布流程"
+        pass "受控镜像构建验收仅允许手工触发"
     else
-        fail "受控镜像发布流程包含非手工触发入口"
-    fi
-
-    if contains "$file" 'tag=sha-\$\{GITHUB_SHA\}' &&
-        ! contains "$file" '(^|:)latest([[:space:]]|$)'; then
-        pass "受控镜像仅生成完整提交 SHA 标签"
-    else
-        fail "受控镜像发布流程包含可变或非完整提交标签"
+        fail "受控镜像构建验收包含非手工触发入口"
     fi
 
     if contains "$file" 'controlled-three-compose-smoke\.sh' &&
-        contains "$file" 'uses: actions/attest@v4' &&
-        contains "$file" 'push-to-registry: true' &&
-        [ "$(grep -Ec 'gh attestation verify.*oci://' "$file")" -eq 2 ] &&
-        contains "$file" '^  registry-pull-smoke:' &&
-        contains "$file" 'needs: build-test-publish' &&
-        contains "$file" 'packages: read' &&
-        contains "$file" 'docker pull "\$image"' &&
-        contains "$file" 'attestations: write' &&
-        contains "$file" 'id-token: write'; then
-        pass "受控镜像发布前验收，生成并验证证明，再由独立运行器按摘要拉取验收"
+        contains "$file" 'rustdesk-controlled-server:check' &&
+        contains "$file" 'rustdesk-controlled-api:check'; then
+        pass "受控 server/API 镜像构建后执行三容器验收"
     else
-        fail "受控镜像发布流程缺少发布前验收、证明生成验证或独立运行器拉取验收"
+        fail "受控镜像构建验收缺少双镜像或三容器验收"
     fi
 
-    if contains "$file" 'rustdesk-controlled-server' &&
-        contains "$file" 'rustdesk-controlled-api' &&
-        contains "$file" 'password: \$\{\{ secrets\.GITHUB_TOKEN \}\}' &&
-        ! contains "$file" 'GHCR_TOKEN|personal.access.token|PAT'; then
-        pass "受控镜像发布使用仓库令牌且不声明额外凭据"
+    if ! contains "$file" 'ghcr\.io|docker/login-action|packages:[[:space:]]*write|push-to-registry:[[:space:]]*true|docker push|actions/attest'; then
+        pass "受控镜像仅在运行器本地构建，不登录或写入镜像仓库"
     else
-        fail "受控镜像发布目标或凭据边界不符合要求"
+        fail "受控镜像构建流程仍包含外部镜像发布能力"
     fi
 }
 

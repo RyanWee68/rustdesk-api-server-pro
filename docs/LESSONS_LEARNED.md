@@ -161,6 +161,8 @@ ssh <user>@<server> 'docker logs rustdesk-api-server-pro --tail 100'
 
 ## GHCR 镜像发布
 
+> 历史说明：以下经验来自此前发布流程。当前自用部署已关闭 GHCR 推送，Docker 工作流只做本地构建检查。
+
 - GHCR package 如果已存在且未授权当前仓库 Actions 写入，即使 workflow 配置了 `packages: write` 也会在推送阶段返回 `write_package` 权限拒绝。
 - main 分支的 GHCR 发布必须挂在质量门禁后面：同一提交的线上工作流全部成功后才自动推送，任一流程失败都应阻止镜像发布。
 - 发布 `v*.*.*` 标签时应自动构建并推送 GHCR `latest`、版本标签（含 `vX.Y.Z` 与 `X.Y.Z`）和 sha 标签，否则 Docker 用户拉取 `latest` 拿不到新后端和新 `dist`。

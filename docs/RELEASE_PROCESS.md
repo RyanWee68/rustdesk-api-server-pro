@@ -1,21 +1,15 @@
 # Release Process
 
-Use the original tag-based workflows for releases:
+Use the original tag-based workflow for binary releases and the manual Docker build check:
 
 - `.github/workflows/build-release.yml`
 - `.github/workflows/ghcr-docker.yml`
 
 Do not create one-off release workflows unless absolutely necessary.
 
-## Continuous Delivery (main branch)
+## Docker Delivery
 
-Every push to `main` starts the online quality workflows. After all push-triggered workflows for the same commit complete successfully, `.github/workflows/ghcr-docker.yml` automatically:
-
-1. Bumps the PATCH version in `VERSION` (e.g., `1.1.39` → `1.1.40`) and updates `docs/compat/rustdesk-current.json` to the same server version
-2. Builds and pushes Docker image to GHCR with tags: `latest`, `main`, `sha-xxxxxxx`
-3. Injects the same `APP_VERSION` and `BUILD_TIME` via ldflags/environment (backend) and Vite env vars (frontend)
-
-If any online workflow for that commit fails, GHCR publishing is blocked. No manual steps are needed when the quality gates are green.
+Docker images are not published to GitHub/GHCR. `.github/workflows/ghcr-docker.yml` is a manual build-only check with `push: false`; it does not log in to a registry, change `VERSION`, or push tags. The self-hosted deployment target is `192.168.0.211`, where images are built, tested, and deployed locally.
 
 ## Standard Release Steps (tag-based)
 
@@ -67,7 +61,7 @@ git push origin v1.1.17
 Tag push should trigger:
 
 - `build-release.yml`: builds Linux, Windows and macOS packages for amd64 and arm64, then uploads zip assets to GitHub Release.
-- `ghcr-docker.yml`: builds and pushes GHCR image tags, including `latest`, version tag (e.g., `1.1.17`) and `sha-*`.
+- `ghcr-docker.yml`: optional manual Docker build check; it does not publish an image.
 
 ## Do Not Include in Release Assets
 

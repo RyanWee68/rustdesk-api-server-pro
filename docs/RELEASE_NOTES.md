@@ -58,10 +58,10 @@
 - Go ldflags 注入 `appVersion` 和 `buildTime`，Vite 注入 `VITE_APP_VERSION` 和 `VITE_BUILD_TIME`。
 - 首页更新日志区域显示服务端版本与构建时间，方便确认是否更新成功。
 
-### 4. Docker 镜像自动推送
+### 4. Docker 镜像本地部署
 
-- 每次推送到 main 分支，CI 自动构建并推送镜像到 GHCR（`latest` + `main` + `sha-xxx` 标签）。
-- 打 tag 时额外推送版本号标签。
+- Docker 工作流仅用于手工构建检查，不向 GitHub/GHCR 推送镜像。
+- 自用镜像在 `192.168.0.211` 本地构建、验收和部署。
 
 ### 5. 客户端附加兼容端点
 

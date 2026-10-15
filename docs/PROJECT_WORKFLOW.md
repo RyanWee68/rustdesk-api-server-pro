@@ -19,7 +19,7 @@
 | `docs/` | 当前状态、API 矩阵、部署、排障和发布规范 | 核对链接、版本和实现一致性 |
 | `docker/`、`Dockerfile`、`docker-compose.yaml` | 镜像、容器启动和一体化部署 | Docker 构建与 smoke |
 | `scripts/` | 兼容检查、发布辅助和维护脚本 | 执行对应脚本的最小验证 |
-| `.github/workflows/` | 质量门禁、版本递增、GHCR 与 Release | 检查触发条件和最小权限 |
+| `.github/workflows/` | 质量门禁、Docker 构建检查与 Release | 检查触发条件和最小权限 |
 | `VERSION` | 服务端版本单一事实来源 | 不手工制造与自动递增冲突 |
 
 ## 3. 当前架构事实
@@ -45,9 +45,9 @@
 1. 在本地 `main` 同步远端并完成修改。
 2. 运行与变更范围相符的后端、前端、兼容、Docker 或安全检查。
 3. 只暂存本次修改文件，使用可读的简短提交说明。
-4. 直接推送 `main`；推送后不得绕过失败的 GitHub Actions 门禁手工发布镜像。
-5. `main` 的线上质量流程全部成功后，`ghcr-docker.yml` 自动递增 PATCH 版本，同时更新 `VERSION` 和 `docs/compat/rustdesk-current.json`，再把同一版本注入后端、前端和 GHCR 镜像。
-6. 发布完成后核对版本号、`latest`、`main`、`sha-*` 标签以及 `VERSION` 自动递增提交；缺少版本号标签不得视为发布完成。
+4. 直接推送 `main`；Docker 镜像不发布到 GitHub/GHCR。
+5. 需要复验镜像时手工运行 `ghcr-docker.yml` 或受控镜像构建验收；两者都只构建、不推送，也不自动修改 `VERSION`。
+6. 部署版本由维护者明确更新 `VERSION`，镜像在 `192.168.0.211` 本地构建并完成健康与协议验收后再切换。
 7. 发布完成后将远端 `backup` 对齐到已发布的 `main`；`backup` 只保存快照，不触发正式发布。
 8. 任一门禁失败时先修复失败原因并重新推送 `main`，不得用旧提交或本地未验证镜像冒充正式发布。
 

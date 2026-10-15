@@ -71,12 +71,14 @@ jobs:
           grep -A5 "cleanup_target:" .github/workflows/cleanup-history.yml | grep -q 'default: "none"'
           grep -q "confirm.*CLEAN_TAGS\|CLEAN_TAGS" .github/workflows/cleanup-history.yml
 
-      - name: 检查 GHCR 镜像命名空间转为小写
+      - name: 检查 Docker 工作流仅构建不发布
         shell: bash
         run: |
           set -euo pipefail
-          grep -Fq "tr '[:upper:]' '[:lower:]'" .github/workflows/ghcr-docker.yml
-          ! grep -Fq 'ghcr.io/${{ github.repository_owner }}/' .github/workflows/ghcr-docker.yml
+          for file in .github/workflows/ghcr-docker.yml .github/workflows/controlled-release.yml; do
+            ! grep -Eq 'ghcr\.io|docker/login-action|packages:[[:space:]]*write|push-to-registry:[[:space:]]*true|docker push' "$file"
+          done
+          grep -Eq 'push:[[:space:]]*false' .github/workflows/ghcr-docker.yml
 
       - name: 检查发布工作流包含合规文件
         shell: bash

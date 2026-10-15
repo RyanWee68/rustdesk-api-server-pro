@@ -10,7 +10,7 @@
 
 - 构建 Linux、Windows、macOS 的 amd64 和 arm64 部署包。
 - 部署包包含后端程序、管理后台静态资源、示例配置、部署文档以及许可证和合规声明。
-- Docker 镜像使用相同版本号发布到 GHCR。
+- Docker 镜像不随 Release 发布；自用部署在 `192.168.0.211` 本地构建。
 
 ## 下载说明
 
@@ -23,7 +23,7 @@
 
 ## 升级说明
 
-- Docker 用户建议使用 `ghcr.io/liyan-lucky/rustdesk-api-server-pro:{version}`。
+- Docker 部署使用目标主机本地构建的明确版本镜像。
 - 二进制部署需要同时替换后端程序和 `dist` 静态资源，并执行 `sync` 后重启。
 - Docker 启动脚本会自动同步数据库；已有 `/app/data` 配置和账号不会被覆盖。
 - 升级前请备份数据库、运行配置和挂载目录。

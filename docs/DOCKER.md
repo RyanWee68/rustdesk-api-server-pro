@@ -151,7 +151,7 @@ chmod 700 ./update-rustdesk-api.sh
 
 ### 版本系统
 
-镜像版本由仓库根目录的 `VERSION` 文件控制（单一事实来源）。推送到 main 分支后，GHCR 发布流程会等待同一提交的线上工作流全部成功；通过后自动递增 PATCH 版本号（如 `1.1.16` → `1.1.17`），并通过 Go ldflags 和 Vite 环境变量注入到后端和前端。
+镜像版本由仓库根目录的 `VERSION` 文件控制（单一事实来源）。当前自用部署不向 GitHub/GHCR 发布镜像，也不再由 Docker 工作流自动递增版本；版本变更应明确提交，并在 `192.168.0.211` 本地构建时通过 Go ldflags 和 Vite 环境变量注入。
 
 - 后端：`main.appVersion` 和 `main.buildTime` 通过 ldflags 注入，运行时设置 `APP_VERSION` 和 `BUILD_TIME` 环境变量
 - 前端：`VITE_APP_VERSION` 和 `VITE_BUILD_TIME` 在构建时注入
@@ -159,14 +159,7 @@ chmod 700 ./update-rustdesk-api.sh
 
 ### 镜像标签
 
-推送到 main 分支且线上质量流程全部成功后，CI 自动构建并推送以下标签到 GHCR：
-
-- `latest`：最新构建
-- `main`：main 分支最新
-- `<VERSION>`：每次 main 构建自动递增后的明确版本号（例如 `1.1.42`）
-- `sha-xxxxxxx`：对应 commit SHA
-
-打 tag（如 `v1.1.17`）时额外推送版本号标签（如 `1.1.17`）。
+当前部署只使用 `192.168.0.211` 上的本地标签。建议同时保留明确版本或完整提交 SHA 的标签用于回滚，不使用远程仓库标签作为部署来源。
 
 ### 启动流程
 
