@@ -194,9 +194,10 @@ printf '%s\n' \
     'RUSTDESK_API_IMAGE=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' \
     'RUSTDESK_CONTROLLED_SERVER_IMAGE=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' \
     > "$OFFLINE_DIR/images.env"
+printf '11111111-2222-3333-4444-555555555555\n' > "$OFFLINE_DIR/source-docker-id"
 (
     cd "$OFFLINE_DIR"
-    sha256sum controlled-images.tar images.env > SHA256SUMS
+    sha256sum controlled-images.tar images.env source-docker-id > SHA256SUMS
 )
 sh "$ROOT_DIR/scripts/deploy/controlled-offline-import-acceptance.sh" --verify-only "$OFFLINE_DIR" "$ROOT_DIR" >/dev/null
 if sh "$ROOT_DIR/scripts/deploy/controlled-offline-import-acceptance.sh" "$OFFLINE_DIR" "$ROOT_DIR" >"$WORK_DIR/offline-host.log" 2>&1; then
@@ -204,6 +205,21 @@ if sh "$ROOT_DIR/scripts/deploy/controlled-offline-import-acceptance.sh" "$OFFLI
 fi
 grep -q 'ERR-2397' "$WORK_DIR/offline-host.log" || fail "独立主机确认拒绝缺少 ERR-2397"
 grep -q 'CONTROLLED_INDEPENDENT_HOST=1' "$WORK_DIR/offline-host.log" || fail "独立主机确认拒绝缺少明确操作提示"
+cat > "$FAKE_BIN/docker" <<'EOF'
+#!/bin/sh
+if [ "$1" = "info" ]; then
+    printf '11111111-2222-3333-4444-555555555555\n'
+else
+    printf 'unexpected docker call: %s\n' "$1" >&2
+    exit 1
+fi
+EOF
+chmod +x "$FAKE_BIN/docker"
+if PATH="$FAKE_BIN:$PATH" CONTROLLED_INDEPENDENT_HOST=1 \
+    sh "$ROOT_DIR/scripts/deploy/controlled-offline-import-acceptance.sh" "$OFFLINE_DIR" "$ROOT_DIR" >"$WORK_DIR/offline-same-host.log" 2>&1; then
+    fail "离线导入检查未拒绝来源 Docker 守护进程"
+fi
+grep -q 'ERR-2397 目标使用来源 Docker 守护进程' "$WORK_DIR/offline-same-host.log" || fail "同机拒绝缺少 ERR-2397"
 
 cp "$OFFLINE_DIR/SHA256SUMS" "$WORK_DIR/SHA256SUMS.good"
 printf 'tampered\n' >> "$OFFLINE_DIR/controlled-images.tar"
@@ -224,7 +240,7 @@ cp "$WORK_DIR/SHA256SUMS.good" "$OFFLINE_DIR/SHA256SUMS"
 printf 'UNEXPECTED=value\n' >> "$OFFLINE_DIR/images.env"
 (
     cd "$OFFLINE_DIR"
-    sha256sum controlled-images.tar images.env > SHA256SUMS
+    sha256sum controlled-images.tar images.env source-docker-id > SHA256SUMS
 )
 if sh "$ROOT_DIR/scripts/deploy/controlled-offline-import-acceptance.sh" --verify-only "$OFFLINE_DIR" "$ROOT_DIR" >"$WORK_DIR/offline-env.log" 2>&1; then
     fail "离线导入检查未拒绝未知环境变量"

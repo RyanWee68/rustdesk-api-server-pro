@@ -88,6 +88,12 @@ printf 'PASS: 离线候选包摘要和不可变镜像 ID 校验通过\n'
 [ "$VERIFY_ONLY" -eq 0 ] || exit 0
 [ "${CONTROLLED_INDEPENDENT_HOST:-0}" = "1" ] || fail "仅允许在独立主机执行；确认后设置 CONTROLLED_INDEPENDENT_HOST=1"
 command -v docker >/dev/null 2>&1 || fail "缺少 Docker"
+[ -f "$BUNDLE_DIR/source-docker-id" ] || fail "离线候选包缺少来源 Docker ID，不能证明与目标隔离"
+grep -Eq '^[0-9a-f]{64} [ *]source-docker-id$' "$BUNDLE_DIR/SHA256SUMS" || fail "来源 Docker ID 未纳入摘要清单"
+SOURCE_DOCKER_ID="$(tr -d '\r\n' < "$BUNDLE_DIR/source-docker-id")"
+TARGET_DOCKER_ID="$(docker info --format '{{.ID}}' 2>/dev/null)" || fail "无法读取目标 Docker ID"
+[ -n "$SOURCE_DOCKER_ID" ] && [ -n "$TARGET_DOCKER_ID" ] || fail "来源或目标 Docker ID 为空"
+[ "$SOURCE_DOCKER_ID" != "$TARGET_DOCKER_ID" ] || fail "目标使用来源 Docker 守护进程，拒绝同机导入"
 [ -f "$ROOT_DIR/scripts/deploy/controlled-three-compose-smoke.sh" ] || fail "找不到三容器验收脚本"
 [ -f "$ROOT_DIR/docker-compose.controlled-three-isolated.yaml" ] || fail "找不到三容器隔离 Compose"
 
