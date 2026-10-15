@@ -9,3 +9,4 @@ docker/*.sh text eol=lf
 scripts/deploy/*.sh text eol=lf
 scripts/deploy/*.py text eol=lf
 templates/*.yaml text eol=lf
+patches/rustdesk-server/*.patch text eol=lf
