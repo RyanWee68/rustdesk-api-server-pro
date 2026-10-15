@@ -338,12 +338,12 @@ def fixture_cases(project, address, container, public_key, encrypted, observed):
     username, source = "hbbs-probe-" + run_id, "hbbs-source-" + run_id
     device = str(secrets.randbelow(800000000) + 100000000)
     device_uuid, fingerprint = secrets.token_bytes(16), secrets.token_bytes(32)
-    token, session = secrets.token_urlsafe(48), str(uuid.uuid4())
+    token, target_token, session = secrets.token_urlsafe(48), secrets.token_urlsafe(48), str(uuid.uuid4())
     sessions = [session]
     peer = "controlled-hbbs-probe-" + run_id
     db = sqlite3.connect(db_path, timeout=5)
     audit_start = db.execute("SELECT coalesce(max(id),0) FROM operation_audit").fetchone()[0]
-    user_id = token_id = None
+    user_id = token_id = target_token_id = None
     peer_started = False
     expiry = (datetime.now(ZoneInfo("Asia/Shanghai")) + timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
     request = field(8, field(1, device.encode()) + field(3, base64.b64encode(public_key)) + field(5, token.encode()))
@@ -357,6 +357,9 @@ def fixture_cases(project, address, container, public_key, encrypted, observed):
                             base64.b64encode(fingerprint).decode() if ident == device else ""))
             token_id = db.execute("INSERT INTO auth_token (user_id,rustdesk_id,uuid,token,token_hash,expired,is_admin,status) VALUES (?,?,?,'',?,?,0,1)",
                                   (user_id, source, run_id, hashlib.sha256(token.encode()).hexdigest(), expiry)).lastrowid
+            target_token_id = db.execute("INSERT INTO auth_token (user_id,rustdesk_id,uuid,token,token_hash,expired,is_admin,status) VALUES (?,?,?,'',?,?,0,1)",
+                                         (user_id, device, base64.b64encode(device_uuid).decode(),
+                                          hashlib.sha256(target_token.encode()).hexdigest(), expiry)).lastrowid
         def allowed_connection():
             """严格检查恢复后的响应，不能只凭消息类型判定允许。"""
             response = encrypted(request, response=True)
@@ -366,7 +369,7 @@ def fixture_cases(project, address, container, public_key, encrypted, observed):
 
         for _ in range(3):
             allowed_connection()
-        print("PASS: 有效控制端登录令牌连续三次通过双端策略准入并解密离线目标响应（不是远控或被控端登录证明）")
+        print("PASS: 双端有效登录令牌连续三次通过策略准入并解密离线目标响应（不是远控或设备私钥证明）")
         for label, sql, ident, denied, allowed, code in (
             ("撤销令牌", "UPDATE auth_token SET status=? WHERE id=?", token_id, 0, 1, "ERR-2303"),
             ("禁用用户", "UPDATE user SET status=? WHERE id=?", user_id, 0, 1, "ERR-2308"),
@@ -517,6 +520,8 @@ with socket.create_connection((sys.argv[1],21117),timeout=6) as s:
                 db.execute("DELETE FROM operation_audit WHERE resource_type='rustdesk_admission' AND resource_id=?", (device,))
                 if token_id is not None:
                     db.execute("DELETE FROM auth_token WHERE id=? AND rustdesk_id=?", (token_id, source))
+                if target_token_id is not None:
+                    db.execute("DELETE FROM auth_token WHERE id=? AND rustdesk_id=?", (target_token_id, device))
                 db.execute("DELETE FROM device WHERE rustdesk_id IN (?,?) AND user_id=?", (source, device, user_id))
                 if user_id is not None:
                     db.execute("DELETE FROM user WHERE id=? AND username=?", (user_id, username))
