@@ -51,13 +51,23 @@ python3 "$OFFLINE_RELEASE_DIR/controlled-compose-preflight.py" \
   "$CONTROLLED_DEPLOY_DIR/docker-compose.controlled.yaml"
 ```
 
+在独立物理主机或独立虚拟机上执行离线导入验收。目标 Docker 在导入前不得已存在候选镜像；脚本先校验摘要和镜像清单，再导入、核对不可变 ID 并运行无宿主端口的三容器完整验收：
+
+```bash
+CONTROLLED_INDEPENDENT_HOST=1 \
+  sh scripts/deploy/controlled-offline-import-acceptance.sh \
+  "$OFFLINE_RELEASE_DIR" "$RUSTDESKWEB_ROOT"
+```
+
+只检查包内容而不导入镜像时使用 `--verify-only`。该模式已在授权主机对 `20261012-online-v1` 实包通过，但不计作独立主机导入验收。
+
 预检解析实际环境变量覆盖后的 Compose，不打印凭据，检查回环管理/Web 端口、强制登录、内部密钥一致、专用 API 模式、服务鉴权地址、健康依赖、允许挂载和共享 key 卷。还会只读检查原 `rustdesk-api-server-pro` 及 `rustdesk-api-server-pro-precontrolled` 的挂载，拒绝新数据与这些目录重叠，包括符号链接解析后的重叠。
 
 该保护面向首次切换，不是常规原地更新工具；旧容器改为其他名称后须单独核对其路径。预检不检查正式端口可用性、不备份数据、不轮换密钥，也不代表完整客户端验收完成。
 
 ## 尚未完成
 
-- 注册表发布、签名、独立干净主机导入验收及其他架构验证。
+- 独立干净主机实际导入验收及其他架构验证；导入工具和真实包只读校验已完成。镜像仓库发布已按用户决定取消，不再是完成条件。
 - 完整官方客户端矩阵、外部认证联调。
 - 独立公网收口验收，以及旧客户端/旧公钥和切换后数据差异的完整回滚验收。
 

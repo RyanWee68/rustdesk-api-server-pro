@@ -98,6 +98,7 @@ for script in \
     "$ROOT_DIR/scripts/deploy/controlled-key-rotation.sh" \
     "$ROOT_DIR/scripts/deploy/controlled-lan-poc.sh" \
     "$ROOT_DIR/scripts/deploy/controlled-local-acceptance.sh" \
+    "$ROOT_DIR/scripts/deploy/controlled-offline-import-acceptance.sh" \
     "$ROOT_DIR/scripts/deploy/controlled-preflight.sh" \
     "$ROOT_DIR/scripts/deploy/controlled-security-check.sh" \
     "$ROOT_DIR/scripts/deploy/controlled-server-image-check.sh" \

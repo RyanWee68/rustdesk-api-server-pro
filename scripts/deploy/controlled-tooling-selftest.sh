@@ -187,4 +187,49 @@ grep -q '端口超出有效范围' "$WORK_DIR/security-port.log" || fail "越界
 grep -q 'integer expression expected' "$WORK_DIR/security-port.log" && fail "超长端口触发了 shell 整数错误"
 pass "端口探测参数校验与命令注入回归"
 
+OFFLINE_DIR="$WORK_DIR/offline-release"
+mkdir -p "$OFFLINE_DIR"
+printf 'fixture archive\n' > "$OFFLINE_DIR/controlled-images.tar"
+printf '%s\n' \
+    'RUSTDESK_API_IMAGE=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' \
+    'RUSTDESK_CONTROLLED_SERVER_IMAGE=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' \
+    > "$OFFLINE_DIR/images.env"
+(
+    cd "$OFFLINE_DIR"
+    sha256sum controlled-images.tar images.env > SHA256SUMS
+)
+sh "$ROOT_DIR/scripts/deploy/controlled-offline-import-acceptance.sh" --verify-only "$OFFLINE_DIR" "$ROOT_DIR" >/dev/null
+if sh "$ROOT_DIR/scripts/deploy/controlled-offline-import-acceptance.sh" "$OFFLINE_DIR" "$ROOT_DIR" >"$WORK_DIR/offline-host.log" 2>&1; then
+    fail "离线导入检查未要求独立主机显式确认"
+fi
+grep -q 'ERR-2397' "$WORK_DIR/offline-host.log" || fail "独立主机确认拒绝缺少 ERR-2397"
+grep -q 'CONTROLLED_INDEPENDENT_HOST=1' "$WORK_DIR/offline-host.log" || fail "独立主机确认拒绝缺少明确操作提示"
+
+cp "$OFFLINE_DIR/SHA256SUMS" "$WORK_DIR/SHA256SUMS.good"
+printf 'tampered\n' >> "$OFFLINE_DIR/controlled-images.tar"
+if sh "$ROOT_DIR/scripts/deploy/controlled-offline-import-acceptance.sh" --verify-only "$OFFLINE_DIR" "$ROOT_DIR" >"$WORK_DIR/offline-hash.log" 2>&1; then
+    fail "离线导入检查未拒绝摘要不匹配"
+fi
+grep -q 'ERR-2397' "$WORK_DIR/offline-hash.log" || fail "离线摘要拒绝路径缺少 ERR-2397"
+printf 'fixture archive\n' > "$OFFLINE_DIR/controlled-images.tar"
+cp "$WORK_DIR/SHA256SUMS.good" "$OFFLINE_DIR/SHA256SUMS"
+
+printf '%s\n' 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  ../escape' > "$OFFLINE_DIR/SHA256SUMS"
+if sh "$ROOT_DIR/scripts/deploy/controlled-offline-import-acceptance.sh" --verify-only "$OFFLINE_DIR" "$ROOT_DIR" >"$WORK_DIR/offline-path.log" 2>&1; then
+    fail "离线导入检查未拒绝越界摘要路径"
+fi
+grep -q 'ERR-2397' "$WORK_DIR/offline-path.log" || fail "离线路径拒绝缺少 ERR-2397"
+cp "$WORK_DIR/SHA256SUMS.good" "$OFFLINE_DIR/SHA256SUMS"
+
+printf 'UNEXPECTED=value\n' >> "$OFFLINE_DIR/images.env"
+(
+    cd "$OFFLINE_DIR"
+    sha256sum controlled-images.tar images.env > SHA256SUMS
+)
+if sh "$ROOT_DIR/scripts/deploy/controlled-offline-import-acceptance.sh" --verify-only "$OFFLINE_DIR" "$ROOT_DIR" >"$WORK_DIR/offline-env.log" 2>&1; then
+    fail "离线导入检查未拒绝未知环境变量"
+fi
+grep -q 'ERR-2397' "$WORK_DIR/offline-env.log" || fail "离线环境拒绝缺少 ERR-2397"
+pass "离线候选包摘要、路径和镜像清单回归"
+
 printf '\n受控部署工具自测通过。\n'
