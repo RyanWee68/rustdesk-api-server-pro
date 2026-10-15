@@ -16,6 +16,7 @@ func TestConnectionSeparatesSourceAndTarget(t *testing.T) {
 	insertAdmissionDevice(t, db, "rd-1", DeviceApprovalApproved, true, false, 1)
 	insertAdmissionDevice(t, db, "rd-target", DeviceApprovalApproved, true, false, 1)
 	token := insertAdmissionToken(t, db, 1, "rd-1", "uuid-1")
+	insertAdmissionToken(t, db, 1, "rd-target", "uuid-1")
 	svc := NewRustdeskAdmissionService(db, admissionTestConfig())
 	before := readAdmissionDevice(t, db)
 	resp, err := svc.CheckConnection(core.RustdeskConnectionRequest{TargetID: "rd-target", AccessToken: token, Relay: true})
@@ -33,7 +34,7 @@ func TestConnectionSeparatesSourceAndTarget(t *testing.T) {
 
 // TestConnectionDenialMatrix 覆盖任意一方审批、用户、token 与中继策略拒绝。
 func TestConnectionDenialMatrix(t *testing.T) {
-	for _, scenario := range []string{"empty-target", "bad-token", "expired-token", "revoked-token", "admin-token", "source-pending", "target-pending", "target-missing", "source-relay", "target-relay", "target-user-disabled", "source-owner", "source-uuid", "source-uuid-empty"} {
+	for _, scenario := range []string{"empty-target", "bad-token", "expired-token", "revoked-token", "admin-token", "source-pending", "target-pending", "target-missing", "target-no-token", "target-expired-token", "target-revoked-token", "source-relay", "target-relay", "target-user-disabled", "source-owner", "target-owner", "source-uuid", "source-uuid-empty", "target-uuid"} {
 		t.Run(scenario, func(t *testing.T) {
 			db := newAdmissionTestEngine(t)
 			if _, err := db.Insert(&model.User{Id: 2, Username: "target-owner", Status: 1, AllowRemoteAccess: true, AllowRelay: true}); err != nil {
@@ -42,6 +43,7 @@ func TestConnectionDenialMatrix(t *testing.T) {
 			insertAdmissionDevice(t, db, "rd-1", DeviceApprovalApproved, true, false, 1)
 			insertAdmissionDevice(t, db, "rd-target", DeviceApprovalApproved, true, false, 2)
 			token := insertAdmissionToken(t, db, 1, "rd-1", "uuid-1")
+			insertAdmissionToken(t, db, 2, "rd-target", "uuid-1")
 			req := core.RustdeskConnectionRequest{TargetID: "rd-target", AccessToken: token, Relay: true}
 			code := errcode.ERR2303.Code
 			var err error
@@ -65,6 +67,12 @@ func TestConnectionDenialMatrix(t *testing.T) {
 				_, err = db.Where("rustdesk_id = ?", id).Cols("approval_status").Update(&model.Device{ApprovalStatus: DeviceApprovalPending})
 			case "target-missing":
 				req.TargetID, code = "missing", errcode.ERR2304.Code
+			case "target-no-token":
+				_, err = db.Where("rustdesk_id = ?", "rd-target").Delete(&model.AuthToken{})
+			case "target-expired-token":
+				_, err = db.Where("rustdesk_id = ?", "rd-target").Cols("expired").Update(&model.AuthToken{Expired: time.Now().Add(-time.Hour)})
+			case "target-revoked-token":
+				_, err = db.Where("rustdesk_id = ?", "rd-target").Cols("status").Update(&model.AuthToken{Status: 0})
 			case "source-relay", "target-relay":
 				id := "rd-1"
 				if scenario == "target-relay" {
@@ -78,6 +86,9 @@ func TestConnectionDenialMatrix(t *testing.T) {
 			case "source-owner":
 				code = errcode.ERR2314.Code
 				_, err = db.Where("rustdesk_id = ?", "rd-1").Cols("user_id").Update(&model.Device{UserId: 2})
+			case "target-owner":
+				code = errcode.ERR2314.Code
+				_, err = db.Where("rustdesk_id = ?", "rd-target").Cols("user_id").Update(&model.Device{UserId: 1})
 			case "source-uuid", "source-uuid-empty":
 				code = errcode.ERR2313.Code
 				uuid := "conflicting-uuid"
@@ -85,6 +96,9 @@ func TestConnectionDenialMatrix(t *testing.T) {
 					uuid = ""
 				}
 				_, err = db.Where("rustdesk_id = ?", "rd-1").Cols("uuid").Update(&model.AuthToken{Uuid: uuid})
+			case "target-uuid":
+				code = errcode.ERR2313.Code
+				_, err = db.Where("rustdesk_id = ?", "rd-target").Cols("uuid").Update(&model.AuthToken{Uuid: "conflicting-uuid"})
 			}
 			if err != nil {
 				t.Fatal(err)
@@ -107,6 +121,7 @@ func TestConnectionCombinesPolicy(t *testing.T) {
 	insertAdmissionDevice(t, db, "rd-1", DeviceApprovalApproved, true, false, 1)
 	insertAdmissionDevice(t, db, "rd-target", DeviceApprovalApproved, false, false, 1)
 	token := insertAdmissionToken(t, db, 1, "rd-1", "uuid-1")
+	insertAdmissionToken(t, db, 1, "rd-target", "uuid-1")
 	expiry := time.Now().Add(time.Minute).Truncate(time.Second)
 	if _, err := db.Where("rustdesk_id = ?", "rd-target").Cols("authorized_until").Update(&model.Device{AuthorizedUntil: expiry}); err != nil {
 		t.Fatal(err)
@@ -114,5 +129,28 @@ func TestConnectionCombinesPolicy(t *testing.T) {
 	resp, err := NewRustdeskAdmissionService(db, admissionTestConfig()).CheckConnection(core.RustdeskConnectionRequest{TargetID: "rd-target", AccessToken: token})
 	if err != nil || !resp.Allow || resp.Policy == nil || resp.Policy.AllowRelay || resp.Policy.ExpireAt != expiry.Unix() {
 		t.Fatalf("ERR-2398 合并策略错误：%+v err=%v", resp, err)
+	}
+}
+
+// TestConnectionTargetLoginRestores 验证被控端重新取得有效登录令牌后可恢复新连接。
+func TestConnectionTargetLoginRestores(t *testing.T) {
+	db := newAdmissionTestEngine(t)
+	insertAdmissionDevice(t, db, "rd-1", DeviceApprovalApproved, true, false, 1)
+	insertAdmissionDevice(t, db, "rd-target", DeviceApprovalApproved, true, false, 1)
+	sourceToken := insertAdmissionToken(t, db, 1, "rd-1", "uuid-1")
+	insertAdmissionToken(t, db, 1, "rd-target", "uuid-1")
+	if _, err := db.Where("rustdesk_id = ?", "rd-target").Cols("status").Update(&model.AuthToken{Status: 0}); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewRustdeskAdmissionService(db, admissionTestConfig())
+	req := core.RustdeskConnectionRequest{TargetID: "rd-target", AccessToken: sourceToken}
+	if got, err := svc.CheckConnection(req); err != nil || got.Allow || got.Code != errcode.ERR2303.Code {
+		t.Fatalf("ERR-2398 被控端退出后仍可连接：%+v err=%v", got, err)
+	}
+	if _, err := db.Where("rustdesk_id = ?", "rd-target").Cols("status", "expired").Update(&model.AuthToken{Status: 1, Expired: time.Now().Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := svc.CheckConnection(req); err != nil || !got.Allow {
+		t.Fatalf("ERR-2398 被控端重新登录后未恢复连接：%+v err=%v", got, err)
 	}
 }

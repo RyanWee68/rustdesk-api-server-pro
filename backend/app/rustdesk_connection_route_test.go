@@ -45,6 +45,9 @@ func TestRustdeskConnectionRoute(t *testing.T) {
 	if _, err := db.Insert(&model.AuthToken{UserId: 1, RustdeskId: "source", Uuid: "uuid-source", TokenHash: util.Sha256Hex(token), Expired: time.Now().Add(time.Hour), Status: 1}); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := db.Insert(&model.AuthToken{UserId: 1, RustdeskId: "target", Uuid: "uuid-target", TokenHash: util.Sha256Hex("target-login-token"), Expired: time.Now().Add(time.Hour), Status: 1}); err != nil {
+		t.Fatal(err)
+	}
 	payload, err := json.Marshal(core.RustdeskConnectionRequest{TargetID: "target", AccessToken: token, Relay: true})
 	if err != nil {
 		t.Fatal(err)
@@ -131,6 +134,9 @@ func TestRustdeskRelayGrantRoute(t *testing.T) {
 		}
 	}
 	if _, err := db.Insert(&model.AuthToken{UserId: 1, RustdeskId: "source", Uuid: "uuid-source", TokenHash: util.Sha256Hex(token), Expired: time.Now().Add(time.Hour), Status: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Insert(&model.AuthToken{UserId: 1, RustdeskId: "target", Uuid: "uuid-target", TokenHash: util.Sha256Hex("target-login-token"), Expired: time.Now().Add(time.Hour), Status: 1}); err != nil {
 		t.Fatal(err)
 	}
 	post := func(path string, payload interface{}, authorized bool) (int, core.RustdeskAdmissionResponse) {

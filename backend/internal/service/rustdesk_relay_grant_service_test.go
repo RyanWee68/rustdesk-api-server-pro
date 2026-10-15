@@ -18,6 +18,7 @@ func newRelayGrantFixture(t *testing.T) (*RustdeskAdmissionService, core.Rustdes
 	insertAdmissionDevice(t, db, "source", DeviceApprovalApproved, true, false, 1)
 	insertAdmissionDevice(t, db, "target", DeviceApprovalApproved, true, false, 1)
 	token := insertAdmissionToken(t, db, 1, "source", "uuid-1")
+	insertAdmissionToken(t, db, 1, "target", "uuid-1")
 	return NewRustdeskAdmissionService(db, admissionTestConfig()), core.RustdeskRelayGrantIssueRequest{
 		TargetID: "target", AccessToken: token, SessionUUID: testRelaySessionUUID,
 		SourceIP: "192.0.2.10", TargetIP: "198.51.100.20",

@@ -5,7 +5,7 @@
 ## 当前事实与缺口
 
 - 固定 server 基线为 `a7736be5e40f85bfc141120dce587e836e5d4b80`，协议子模块为 `69cea8dafee147848ae88702029f4bf7df7224c3`。
-- `backend/internal/service/rustdesk_connection_service.go` 以有效控制端令牌解析控制端；被控端仅检查设备审批、绑定用户与策略。**它没有证明被控端此刻仍登录**。
+- `backend/internal/service/rustdesk_connection_service.go` 以有效控制端令牌解析控制端，并要求被控端至少存在绑定设备、未撤销且未过期的客户端令牌；退出或撤销后拒绝新连接。**数据库令牌仍不能证明被控端此刻持有凭据或由真实设备发起本次连接**。
 - `RegisterPeer` 没有登录凭据。设备在线、心跳较新、数据库里存在未过期 token、曾经登录过，都不能替代当前登录态证明。
 - 当前 `hbbr` 核销只带会话 UUID 和观察到的 IP。共享 IP 的一端不能可靠区分为控制端还是被控端；放开同 IP 会允许一端占用两个名额。
 - 当前 fork 的 WebSocket 分支直接采用 `X-Real-IP` / `X-Forwarded-For`；其值没有可信代理认证。不得将这些头当角色或出口证明，WebSocket 端口保持回环绑定。2026-10-13 经授权测试管理端口已改为指定局域网地址绑定，不是公网开放或可信代理认证。
