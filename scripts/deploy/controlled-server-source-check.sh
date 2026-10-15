@@ -146,6 +146,16 @@ check_api_contract() {
 check_fail_closed_contract() {
     dir="$1"
 
+    for file in rendezvous_server.rs relay_server.rs; do
+        if [ ! -f "$dir/src/$file" ]; then
+            fail "源码缺少 WebSocket 入口：$file"
+        elif contains_any "$dir/src/$file" 'X-Real-IP' 'X-Forwarded-For'; then
+            fail "WebSocket 入口仍信任未认证的转发来源头：$file"
+        else
+            pass "WebSocket 入口忽略未认证的转发来源头：$file"
+        fi
+    done
+
     if contains_any "$dir" 'MUST_LOGIN' 'must_login'; then
         pass "源码包含强制登录开关线索"
     else

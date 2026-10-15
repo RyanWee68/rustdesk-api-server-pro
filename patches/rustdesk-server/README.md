@@ -32,6 +32,7 @@ scripts/deploy/controlled-fork-apply.sh /path/to/rustdesk-server
 - 显式强制中继在初始 PunchHoleRequest 路径先签发，再用同一 UUID 通知双端；
 - API 请求失败时新连接和新中继默认拒绝，不使用允许结果缓存；
 - `RUSTDESK_KEY_DIR` 指定 server key 的工作目录。
+- 在未建立可信代理身份前，hbbs/hbbr 的 WebSocket 入口忽略客户端自带的转发来源头，仅使用 TCP 对端地址。
 
 Windows Rust 1.99.0 的 `cargo check --bins`、Linux release 镜像构建与隔离运行已通过。
 2026-10-10 已审批的官方 1.4.9 客户端单次远控成功；2026-10-12 隔离三容器中，

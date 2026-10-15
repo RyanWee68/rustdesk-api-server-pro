@@ -14,6 +14,12 @@
 
 ## 当前完成情况
 
+### 2026-10-15 WebSocket 来源 IP 信任边界修复候选
+
+- 固定 server fork 的 hbbs/hbbr WebSocket 入口原先无条件采用客户端提供的 `X-Real-IP` / `X-Forwarded-For`。在没有可信 TLS 代理身份的现状下，两处已改为忽略转发头，仅使用 TCP 实际对端地址；维护提交 `04c5f50` 已推送到用户自己的 server fork，未推送官方仓库。
+- 更新固定官方基线补丁及源码检查，后者会拒绝 hbbs/hbbr 再次读取上述未认证来源头。干净官方基线上的补丁应用检查通过；维护 fork 的双二进制离线编译与 16/16 库测试通过。
+- 这是源码候选，不是 0.211 的已部署修复：正式 server 镜像尚未替换。正常 WSS 仍缺可信 TLS 代理认证与官方客户端正向验收；代理上线时必须重新设计可信来源传递，不能直接恢复读取任意转发头。
+
 ### 2026-10-15 WebSocket 伪造来源头负向验收
 
 - 在现有 `controlled-hbbs-protocol-acceptance.py` 中增加 `X-Real-IP` 和 `X-Forwarded-For` 两种伪造来源头；请求仍使用标准 WebSocket 握手、掩码帧及明文令牌，逐次要求连接关闭和 `ERR-239E` 新增日志。
