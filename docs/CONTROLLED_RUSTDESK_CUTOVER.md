@@ -94,6 +94,12 @@ python3 scripts/deploy/controlled-sqlite-migration-rehearsal.py \
 
 已完成只读清单、数据库副本迁移、原 YAML 严格解析及副本启动、迁移前快照恢复、正式端口切换、旧服务下线、原容器实机回滚，以及删除旧容器后的离线材料重建与旧 API 隔离健康检查。仍未完成独立公网扫描、外部认证配置联调、旧客户端/旧公钥恢复和切换后新旧数据合并验收。
 
+## 仅回退 2026-10-15 server 镜像
+
+0.211 当前 hbbs/hbbr 镜像为 `sha256:7207a963d0423bd135d7cf296b5da60977749b88f7c4ecfe6f34c1d3b32892ae`。更新前的镜像 `sha256:c6b9d7d5a36476de33c2f4da46f0d5d22532f11a2058f8c0d5df3030bb183f67` 和 `runtime.env.before-ws-ip-20261015` 均保留；2026-10-16 只读核对旧配置可通过正式 Compose 解析，`20261015-current-images-v1` 离线包三项摘要匹配。该镜像回退不需要恢复旧数据库、API 镜像或 server key。
+
+需要回退时先安排维护窗口和自动恢复保护，备份**当时**的 `runtime.env`，只把其中 `RUSTDESK_CONTROLLED_SERVER_IMAGE` 改为上述旧镜像 ID；不要直接用 2026-10-15 的整份 env 覆盖日后可能更新的 API 或密钥配置。执行 `docker compose --env-file runtime.env -f compose.yaml config --quiet` 后，仅对 `rustdesk-hbbr rustdesk-hbbs` 执行 `up -d --no-deps`，再检查两只容器健康、公钥、API/管理页及官方客户端连接。旧镜像恢复只撤回 WebSocket 来源头修复，不能当作整站数据回滚。
+
 ## 仅更新前端的测试部署（2026-10-14）
 
 在组件回归、类型检查、生产构建及独立浏览器验收通过后，使用 `docker/Dockerfile.controlled-api-frontend` 构建增量镜像。构建上下文只能是前端 `dist`，不可传入包含配置或临时凭据的部署目录；构建前先核对基镜像标签对应摘要，使用 `--network=none`，不修改后端或配置模板。受控部署 CI 已加入增量镜像契约回归并使用其产物执行三容器测试；新增构建步骤已在授权 Linux 上离线通过，新提交的完整远程运行仍需核对。
