@@ -19,6 +19,7 @@
 - 在 Windows 工作区用 `git archive` 生成部署包时，Linux 入口脚本和 YAML 曾被导出为 CRLF，远端出现 shell `Illegal option -\r`，并导致配置段匹配失败。问题发生在归档内容，现用正式容器未受影响。
 - `.gitattributes` 已将受控 Dockerfile、Compose、shell、Python、工作流和配置模板固定为 LF；现有静态部署检查增加 CRLF 拒绝，统一返回 `ERR-2396`。
 - 候选属性归档及提交后的普通 `git archive HEAD` 均在授权 Linux 主机通过 shell 语法与静态部署检查，0 警告；人为加入 CRLF 的隔离负向回归按预期以 `ERR-2396` 拒绝并自动恢复测试文件。
+- 本地完整聚合验收为 0 失败、0 警告、6 项环境参数缺失跳过；现用 API、hbbs、hbbr 三容器复核为 `running/healthy`，本轮没有修改生产目录、卷、镜像或配置。
 
 ### 2026-10-15 被控端有效登录令牌门禁部署
 
