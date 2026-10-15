@@ -252,11 +252,11 @@ def acceptance(container, unavailable):
         observed(lambda: plaintext(message), "ERR-239E 拒绝携带令牌的明文 TCP 请求")
     print("PASS: 打洞、中继和健康检查三类明文令牌请求均拒绝且日志不泄漏令牌")
 
-    def websocket():
+    def websocket(extra_headers=b""):
         """使用标准握手和掩码帧验证 WebSocket 明文令牌不能绕过。"""
         with socket.create_connection((address, 21118), timeout=7) as stream:
             key = base64.b64encode(secrets.token_bytes(16))
-            stream.sendall(b"GET / HTTP/1.1\r\nHost: isolated\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: " + key + b"\r\n\r\n")
+            stream.sendall(b"GET / HTTP/1.1\r\nHost: isolated\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: " + key + b"\r\n" + extra_headers + b"\r\n")
             headers = bytearray()
             while not headers.endswith(b"\r\n\r\n"):
                 require(len(headers) < 4096, "WebSocket 响应头过大")
@@ -270,7 +270,9 @@ def acceptance(container, unavailable):
             require(not reply or reply[0] & 15 == 8, "WebSocket 明文令牌未被关闭")
 
     observed(websocket, "ERR-239E 拒绝携带令牌的明文 TCP 请求")
-    print("PASS: WebSocket 明文令牌请求拒绝，不作为官方 WebSocket 兼容性通过")
+    for header in (b"X-Real-IP: 192.0.2.10\r\n", b"X-Forwarded-For: 192.0.2.10\r\n"):
+        observed(lambda: websocket(header), "ERR-239E 拒绝携带令牌的明文 TCP 请求")
+    print("PASS: WebSocket 明文令牌和伪造来源头均拒绝，不作为官方 WebSocket 兼容性通过")
 
     def registration():
         """独立随机设备注册仅写入将随隔离卷清理的待审批记录。"""
