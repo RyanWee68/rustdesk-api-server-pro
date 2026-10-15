@@ -308,6 +308,7 @@ API 和账号策略恢复后，用户在发起端 `487921466` 正常退出客户
 | Docker 配置解析 | `docker compose -f docker-compose.controlled.yaml config --quiet` | 已通过（2026-10-09，授权 Linux 主机） | 仅解析配置，未启动三容器服务 |
 | 专用 API 镜像构建 | `Dockerfile.controlled-api` | 已通过（2026-10-12） | 从同版受控一体化产物离线构建，删除 hbbs/hbbr 可执行入口，仅运行 API；非法模式、缺少内部密钥及错误切回一体化模式拒绝启动 |
 | 三容器隔离生命周期 | `controlled-three-compose-smoke.sh` | 已通过（2026-10-15） | 提交 `87b41a0` 的普通归档使用现用 API/server 镜像完整复验：三服务健康、无宿主端口、真实加密准入/签发/核销/重放、API 停止与恢复、强制重建及三卷持久化均通过；随机项目资源已清理。未使用正式端口或官方客户端 |
+| 最新远程受控部署回归 | GitHub Actions `controlled-deployment.yml` | 已通过（2026-10-15） | [运行 #36](https://github.com/RyanWee68/rustdesk-api-server-pro/actions/runs/38698396456) 总耗时 19 分 23 秒；`rust-template`、`server-fork`、`acceptance`、`real-three-containers` 四个作业全部成功，最终真实三容器作业耗时 11 分 1 秒 |
 | 正式端口占用与切换 | 测试主机 `docker ps`、监听和切换脚本 | 已通过（2026-10-12） | 完成旧服务停机、正式三容器切换、真实回滚和再次切换；当前端口仅绑定 `192.168.0.211`，旧容器随后删除，离线重建健康验证通过 |
 | hbbs 加密准入与真实中继签发 | `controlled-hbbs-protocol-acceptance.py`（三容器隔离运行） | 已通过（2026-10-12） | 验证 server 签名、双向加密和有效登录态；未登录、撤销令牌、禁用用户/目标、待审批目标、关闭远控/中继均拒绝且恢复后放行。真实 hbbs 签发双 IP 未过期授权，hbbr 双端核销与重放拒绝；实际调用的允许/七类拒绝审计齐全且无原始令牌泄漏。明文令牌、篡改密文及 WebSocket 明文令牌被拒绝；不是官方客户端或 WebSocket 正常连接验收 |
 | hbbs 在 API 故障时默认拒绝 | 三容器独立停止 API，`--api-unavailable` 探针 | 已通过（2026-10-12） | hbbs/hbbr 持续健康；加密连接未登录/无效令牌及 UDP 新设备注册均为 `ERR-239B`，新中继拒绝，恢复 API 后准入行为恢复；本次隔离资源自动清理 |
