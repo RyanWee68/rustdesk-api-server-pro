@@ -21,6 +21,7 @@ declare module "@elegant-router/types" {
     "404": "/404";
     "500": "/500";
     "about": "/about";
+    "about_downloads": "/about/downloads";
     "about_help": "/about/help";
     "about_version": "/about/version";
     "audit": "/audit";
@@ -122,6 +123,7 @@ declare module "@elegant-router/types" {
     | "500"
     | "iframe-page"
     | "login"
+    | "about_downloads"
     | "about_help"
     | "about_version"
     | "audit_admissionlogs"

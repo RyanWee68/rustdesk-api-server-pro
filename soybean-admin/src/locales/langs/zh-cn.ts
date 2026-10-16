@@ -159,6 +159,7 @@ const local: App.I18n.Schema = {
     'iframe-page': '内嵌页面',
     home: '首页',
     about: '关于',
+    about_downloads: '客户端与证书',
     about_version: '版本信息',
     about_help: '错误码帮助',
     audit: '日志审计',

@@ -52,6 +52,18 @@ export const generatedRoutes: GeneratedRoute[] = [
     },
     children: [
       {
+        name: 'about_downloads',
+        path: '/about/downloads',
+        component: 'view.about_downloads',
+        meta: {
+          title: 'about_downloads',
+          i18nKey: 'route.about_downloads',
+          icon: 'mdi:download-circle-outline',
+          order: 3,
+          roles: ['R_SUPER']
+        }
+      },
+      {
         name: 'about_help',
         path: '/about/help',
         component: 'view.about_help',

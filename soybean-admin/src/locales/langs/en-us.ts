@@ -137,6 +137,7 @@ const local: App.I18n.Schema = {
     'iframe-page': 'Iframe',
     home: 'Home',
     about: 'About',
+    about_downloads: 'Clients and certificates',
     about_version: 'Version Info',
     about_help: 'Error Code Help',
     audit: 'Audit',

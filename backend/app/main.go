@@ -47,6 +47,7 @@ func newApp(cfg *config.ServerConfig, dbEngine *xorm.Engine) (*iris.Application,
 		return nil, err
 	}
 	SetRoute(app)
+	SetDownloadRoutes(app, filepath.Join(filepath.Dir(cfg.Db.Dsn), "downloads"))
 	app.HandleDir("/", iris.Dir(cfg.HttpConfig.StaticDir))
 
 	return app, nil
@@ -68,6 +69,7 @@ func newAdminApp(cfg *config.ServerConfig, dbEngine *xorm.Engine) (*iris.Applica
 		return nil, err
 	}
 	SetAdminRoute(app)
+	SetDownloadRoutes(app, filepath.Join(filepath.Dir(cfg.Db.Dsn), "downloads"))
 	app.HandleDir("/", iris.Dir(cfg.HttpConfig.StaticDir))
 	return app, nil
 }

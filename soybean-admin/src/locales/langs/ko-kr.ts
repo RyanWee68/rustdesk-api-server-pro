@@ -137,6 +137,7 @@ const local: App.I18n.Schema = {
     'iframe-page': 'Iframe',
     home: '홈',
     about: '정보',
+    about_downloads: '클라이언트 및 인증서',
     about_version: 'RustDesk 버전',
     about_help: '오류 코드 도움말',
     audit: '감사',

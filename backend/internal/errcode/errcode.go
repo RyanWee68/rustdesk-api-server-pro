@@ -315,6 +315,8 @@ var (
 	ERRB004 = register("ERR-B004", "InvalidDeviceCheckJobDuration", "infra", "设备检查定时任务间隔无效", "在 server.yaml 中设置有效的 jobsConfig.deviceCheckJob.duration（分钟）", "Invalid device check job duration", "Set a valid jobsConfig.deviceCheckJob.duration (minutes) in server.yaml")
 	ERRB005 = register("ERR-B005", "CreateSchedulerFailed", "infra", "创建定时调度器失败", "检查 gocron 调度器配置，查看服务端日志获取详细错误", "Failed to create scheduler", "Check gocron scheduler configuration, check server logs for details")
 	ERRB006 = register("ERR-B006", "CreateDeviceCheckJobFailed", "infra", "创建设备检查定时任务失败", "检查定时任务配置，查看服务端日志获取详细错误", "Failed to create device check job", "Check job configuration, check server logs for details")
+	ERRB007 = register("ERR-B007", "DownloadFileNotFound", "infra", "下载文件不存在", "确认服务器数据目录已部署对应文件", "Download file not found", "Confirm the requested file is deployed in the server data directory")
+	ERRB008 = register("ERR-B008", "DownloadFileFailed", "infra", "发送下载文件失败", "检查文件权限、磁盘状态和服务端日志", "Failed to send download file", "Check file permissions, disk status, and server logs")
 	ERRB010 = register("ERR-B010", "DatabaseError", "infra", "数据库操作错误", "检查数据库连接和配置，查看服务端日志获取详细错误", "Database operation error", "Check database connection and configuration, check server logs for details")
 )
 
