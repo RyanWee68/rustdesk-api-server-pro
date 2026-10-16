@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"mime"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -55,5 +56,62 @@ func TestDownloadRoutes(t *testing.T) {
 	application.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/downloads/../server.db", nil))
 	if response.Code != http.StatusNotFound {
 		t.Fatalf("unexpected path status=%d", response.Code)
+	}
+}
+
+// TestDownloadFiles 验证两个下载路由互不串文件、附件命名和分段续传。
+func TestDownloadFiles(t *testing.T) {
+	dir := t.TempDir()
+	files := map[string]string{
+		"rustdesk.jtzxsoft.com.cert.cer": "certificate-content",
+		"rustdesk-1.4.9-x86_64.exe":      "installer-content",
+	}
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	application := iris.New()
+	SetDownloadRoutes(application, dir)
+	if err := application.Build(); err != nil {
+		t.Fatal(err)
+	}
+	for name, content := range files {
+		t.Run(name, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			application.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/downloads/"+name, nil))
+			if response.Code != http.StatusOK || response.Body.String() != content {
+				t.Fatalf("download status=%d body=%q", response.Code, response.Body.String())
+			}
+			_, parameters, err := mime.ParseMediaType(response.Header().Get("Content-Disposition"))
+			if err != nil || parameters["filename"] != name {
+				t.Fatalf("unexpected attachment header=%q err=%v", response.Header().Get("Content-Disposition"), err)
+			}
+			request := httptest.NewRequest(http.MethodGet, "/downloads/"+name, nil)
+			request.Header.Set("Range", "bytes=0-3")
+			response = httptest.NewRecorder()
+			application.ServeHTTP(response, request)
+			if response.Code != http.StatusPartialContent || response.Body.String() != content[:4] {
+				t.Fatalf("range status=%d body=%q", response.Code, response.Body.String())
+			}
+		})
+	}
+}
+
+// TestDownloadRejectsDirectories 验证白名单文件名对应目录时仍不能下载。
+func TestDownloadRejectsDirectories(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "rustdesk-1.4.9-x86_64.exe"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	application := iris.New()
+	SetDownloadRoutes(application, dir)
+	if err := application.Build(); err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	application.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/downloads/rustdesk-1.4.9-x86_64.exe", nil))
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("directory status=%d", response.Code)
 	}
 }

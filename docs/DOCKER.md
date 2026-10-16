@@ -13,6 +13,20 @@ rustdesk-api-server-pro
 
 如果你之前单独部署过 `rustdesk-web` / nginx 前端容器，升级到当前镜像后建议删除旧前端容器，避免旧版 `dist` 覆盖新版登录页，导致第三方登录按钮不显示或页面行为不一致。
 
+## 受控三容器的 HTTPS 管理入口
+
+受控部署使用 `docker-compose.controlled.yaml`；需要内置 HTTPS 管理入口时，再叠加 `docker-compose.controlled-tls.yaml`。证书和私钥必须预先放在持久化数据目录的 `data/tls/server.fullchain.pem`、`data/tls/server.key.pem`，私钥权限必须为 `0600`，且不能是符号链接。覆盖文件不会生成、下载或提交证书。
+
+```bash
+chmod 600 data/tls/server.key.pem
+docker compose \
+  -f docker-compose.controlled.yaml \
+  -f docker-compose.controlled-tls.yaml \
+  up -d
+```
+
+HTTPS 宿主端口由 `FNOS_ADMIN_HTTPS_PORT` 设置，默认 `12443`。基础 Compose 的明文管理端口仍默认只绑定 `127.0.0.1`；如显式改为局域网地址，只能供内网使用，不得配置公网转发。公网管理应只转发 HTTPS 端口。
+
 ## 安装命令示例（可直接执行）
 
 ### 方式一：`docker compose`（推荐）

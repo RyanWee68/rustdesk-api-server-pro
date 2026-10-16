@@ -1,6 +1,6 @@
 # 受控 RustDesk 正式切换与回滚
 
-更新时间：2026-10-16。已完成授权主机局域网正式端口切换、原容器真实回滚及再次切换；旧容器删除后又从离线材料完成隔离重建和 API 健康验证。三容器宿主端口已迁移到 22xxx；管理入口已切换为 `https://rustdesk.jtzxsoft.com:22346`，宿主不再发布管理 HTTP，公网 HTTPS 首页和管理 API 返回 200。公网客户端 API 及 RustDesk 原生 TCP 端口可达，用户确认 `22116/UDP` 已转发；官方 1.4.9 跨网络普通连接自动中继已通过。自签名证书分发、独立公网端口扫描、正常 WSS 和共享出口角色证明仍未完成。
+更新时间：2026-10-16。已完成授权主机局域网正式端口切换、原容器真实回滚及再次切换；旧容器删除后又从离线材料完成隔离重建和 API 健康验证。三容器宿主端口已迁移到 22xxx；公网管理入口为 `https://rustdesk.jtzxsoft.com:22346`，另有仅绑定局域网的 HTTP 管理入口 `http://192.168.0.211:22347`，禁止路由器转发后者。证书与客户端分发页面已部署，Windows 人工安装仍待核对。此前公网 HTTPS、客户端 API 及 RustDesk 原生 TCP 端口检查通过，用户确认 `22116/UDP` 已转发；官方 1.4.9 跨网络普通连接自动中继已通过。当前用户网络无法连接 0.211，暂停主机连接、部署和实机验收；历史健康结果不代表当前在线状态。独立公网端口扫描、正常 WSS 和共享出口角色证明仍未完成。
 
 ## 本次切换结果
 
@@ -13,7 +13,7 @@
 7. 新公钥写入 API 配置并重启 API 后健康通过，server 密钥及卷不变。2026-10-13 已确认历史隔离资源与正式挂载分离，并清理四个历史测试容器、六个测试卷和一个测试网络；2026-10-14 又清理三只无容器引用的旧局域网 PoC data/key/log 卷，并复核正式部署文件、API 配置与正式 key 卷公钥一致。正式三容器及正式数据、key、日志均保留。
 8. 成功后取消本次自动回滚定时器。主机私有部署目录保留 `cutover.py`、`runtime.env`、`cutover-report.json` 和 `server-public-key.txt`；操作脚本的三个回滚时序与名称冲突保护自检通过。需要回滚时，在主机使用私有部署目录中的脚本执行 `python3 cutover.py rollback`；先暂停新管理写入并保留新库，脚本不合并切换后的数据。
 
-当前容器为 `rustdesk-api-server-pro`、`rustdesk-hbbs-controlled`、`rustdesk-hbbr-controlled`；旧容器 `rustdesk-api-server-pro-precontrolled` 已删除。客户端 API `192.168.0.211:22345/TCP` 保持不变；管理宿主端口 `192.168.0.211:22346/TCP` 只映射容器 TLS `12443`，容器明文管理端口 `12346` 未发布且宿主未监听。hbbs `:22115/TCP` 与 `:22116/TCP+UDP`、hbbr `:22117/TCP` 仅绑定主机局域网 IP，WebSocket `127.0.0.1:22118/22119/TCP` 仅回环。`hbbs` 对外宣告公网中继 `171.217.92.118:22117`，并通过 `MASK=192.168.0.0/16`、`LOCAL_IP=192.168.0.211:22117` 向内网客户端返回局域网中继。管理证书为覆盖 `rustdesk.jtzxsoft.com`、公网 IP 和局域网 IP 的自签名证书，私钥权限为 `0600`；原宿主端口已关闭，路由器已转发 22xxx 端口，用户确认 `22116/UDP` 规则已开启；仍需逐台固定信任管理证书并从独立环境复核未开放端口。
+最近已记录的容器为 `rustdesk-api-server-pro`、`rustdesk-hbbs-controlled`、`rustdesk-hbbr-controlled`；旧容器 `rustdesk-api-server-pro-precontrolled` 已删除。客户端 API `192.168.0.211:22345/TCP` 保持不变；管理宿主端口 `192.168.0.211:22346/TCP` 映射容器 TLS `12443`，内网 HTTP `192.168.0.211:22347/TCP` 映射容器明文管理端口 `12346`。后者仅绑定局域网地址，不得配置公网转发。hbbs `:22115/TCP` 与 `:22116/TCP+UDP`、hbbr `:22117/TCP` 仅绑定主机局域网 IP，WebSocket `127.0.0.1:22118/22119/TCP` 仅回环。`hbbs` 对外宣告公网中继 `171.217.92.118:22117`，并通过 `MASK=192.168.0.0/16`、`LOCAL_IP=192.168.0.211:22117` 向内网客户端返回局域网中继。管理证书为覆盖 `rustdesk.jtzxsoft.com`、公网 IP 和局域网 IP 的自签名证书，私钥权限为 `0600`；原宿主端口已关闭，路由器已转发 22xxx 端口，用户确认 `22116/UDP` 规则已开启；仍需逐台固定信任管理证书并从独立环境复核未开放端口。
 
 迁移后 API `/api/health` 与管理页均可用，三容器 healthy；2026-10-16 13:39，官方 1.4.9 从内部端 `192.168.21.23` 普通连接外部端 `171.213.15.205` 成功，`hbbr` 记录同一 UUID 双端配对。server 当前固定为本地镜像 `sha256:45505751dd4205e12bec7baa34cc826939f73789335935281fbc9647c4563fa9`，API、数据库、公钥与端口未因本次更新改变。LAN/公网 HTTP 仍有凭据传输风险；正常 WSS、独立公网扫描、共享出口角色和真实外部认证仍待验收，不能因本次跨网络连接成功而认为全部生产验收已通过。
 
@@ -34,6 +34,31 @@
 4. 准备管理员凭据、独立内部 API 密钥、新 server key 及客户端配置。旧库迁移后设备仍须审批，用户远控/中继策略须逐项核对，不能批量自动审批。
 5. 核对客户端 Relay 地址；如需 hbbs 宣告中继地址，在私有 Compose 覆盖中为 hbbs 设置 `-r <客户端可达地址>:21117`。
 6. 已准备不可变镜像 ID 的离线候选包，见 `CONTROLLED_RUSTDESK_OFFLINE_RELEASE.md`；正式使用前核对全部文件摘要，并在独立部署目录运行 `controlled-compose-preflight.py`，检查实际端口覆盖、原数据目录隔离和 key 卷定义。预检现区分当前受控 API 容器与旧容器，允许现用容器复检自身目录，旧容器或 `-precontrolled` 保留容器仍须与新数据分离；key 卷检查拒绝外部卷、宿主绑定和非本地驱动。26 类危险覆盖 Linux 自测及 0.211 当前正式 Compose 预检均已通过；静态检查仍不能证明同名 Docker 卷是全新生成的，须另外核对卷来源、公钥和轮换记录。原数据保护只识别上述容器名，不能代替完整路径审阅、停机备份及正式端口占用检查。
+
+## 无目标主机的离线预检
+
+`controlled-compose-preflight.py` 已支持仅 HTTPS 管理入口以及 HTTPS 加局域网 HTTP 的组合：容器 `12345/TCP` 必须发布，管理端口 `12346/TCP`、`12443/TCP` 至少一个发布；明文管理仍必须绑定回环或明确的 RFC1918 IPv4，WebSocket 仍必须只绑定回环，重复端口和错误协议仍拒绝。发布 `12443` 本身不能证明服务已启用 TLS。
+
+在有 Docker 的环境生成最终配置 JSON 后，可在无 Docker、无法访问目标主机的电脑执行静态校验。最终 JSON 可能包含密码与内部密钥，只能存放仓库外受保护目录，不得提交 Git、上传或粘贴到聊天。
+
+```bash
+python3 scripts/deploy/controlled-compose-preflight.py --config-json "$PRIVATE_COMPOSE_JSON"
+python3 scripts/deploy/controlled-compose-preflight.py --self-test
+```
+
+离线入口不会调用 Docker 或发起网络连接；成功只表示 JSON 契约检查通过，不包含现用数据挂载重叠、卷来源、宿主端口占用、实际 TLS 配置与证书或路由器转发检查。网络恢复后仍须执行原有完整预检和运行时 HTTPS、明文拒绝及独立公网检查。公网安全检查中的 `FNOS_ADMIN_HTTP_PORT` 应指定明文管理宿主端口 `22347`，不得把允许开放的 HTTPS `22346` 当作应关闭的明文管理端口。
+
+仓库内 `docker-compose.controlled-tls.yaml` 是基础三容器定义的最小 HTTPS 覆盖。使用前将公开证书链和私钥分别放入私有部署目录的 `data/tls/server.fullchain.pem`、`data/tls/server.key.pem`，私钥设为 `0600`；不要把任何证书私钥放入仓库。入口会拒绝缺项、越界路径、符号链接、证书与私钥同文件及权限过宽的私钥。网络恢复后的候选启动方式为：
+
+```bash
+docker compose --env-file "$PRIVATE_ENV" \
+  -f docker-compose.controlled.yaml \
+  -f docker-compose.controlled-tls.yaml \
+  config --format json > "$PRIVATE_COMPOSE_JSON"
+python3 scripts/deploy/controlled-compose-preflight.py --config-json "$PRIVATE_COMPOSE_JSON"
+```
+
+上述 JSON 含展开后的私有环境值，只能放在仓库外受保护目录并在使用后按既定运维流程处理。静态通过后仍须在目标主机运行完整预检；不能据此宣称证书、HTTPS 或端口实际可用。
 
 ## 数据迁移演练
 

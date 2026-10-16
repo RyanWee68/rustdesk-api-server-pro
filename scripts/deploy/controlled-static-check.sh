@@ -237,6 +237,20 @@ check_compose() {
     fi
 }
 
+check_tls_compose() {
+    file="$1"
+    require_file "$file"
+    [ -f "$file" ] || return
+    if contains "$file" 'TLS_PORT=12443' &&
+        contains "$file" 'TLS_CERT_FILE=/app/data/tls/' &&
+        contains "$file" 'TLS_KEY_FILE=/app/data/tls/' &&
+        contains "$file" 'FNOS_ADMIN_HTTPS_PORT.*12443'; then
+        pass "TLS Compose 使用内置 HTTPS 和持久化证书路径"
+    else
+        fail "TLS Compose 缺少 HTTPS 端口或持久化证书路径"
+    fi
+}
+
 check_entrypoint() {
     file="$1"
     require_file "$file"
@@ -291,6 +305,13 @@ check_entrypoint() {
     else
         fail "entrypoint 缺少 API 专用模式或模式校验"
     fi
+    if contains "$file" 'TLS_PORT、TLS_CERT_FILE 和 TLS_KEY_FILE 必须同时设置' &&
+        contains "$file" 'TLS 私钥不能允许组或其他用户访问' &&
+        contains "$file" 'configure_tls /app/data/server.yaml'; then
+        pass "entrypoint 校验并写入 TLS 配置"
+    else
+        fail "entrypoint 缺少 TLS 完整性或私钥权限检查"
+    fi
 }
 
 check_healthcheck() {
@@ -302,6 +323,13 @@ check_healthcheck() {
         pass "healthcheck 检查 API 健康接口"
     else
         fail "healthcheck 未检查 API 健康接口"
+    fi
+
+    if contains "$file" 'TLS_PORT' && contains "$file" 'https://127\.0\.0\.1:' &&
+        contains "$file" 'HTTPS 健康检查失败'; then
+        pass "healthcheck 检查内置 HTTPS 握手"
+    else
+        fail "healthcheck 未检查内置 HTTPS 握手"
     fi
 
     if contains "$file" 'rustdesk-controlled-api.pid' &&
@@ -338,6 +366,7 @@ check_build_context "$ROOT_DIR/.dockerignore"
 check_server_dockerfile "$ROOT_DIR/Dockerfile.controlled-server"
 check_release_workflow "$ROOT_DIR/.github/workflows/controlled-release.yml"
 check_compose "$ROOT_DIR/docker-compose.controlled.yaml" "三容器 Compose"
+check_tls_compose "$ROOT_DIR/docker-compose.controlled-tls.yaml"
 check_compose "$ROOT_DIR/docker-compose.controlled-one.yaml" "一体化 Compose"
 check_entrypoint "$ROOT_DIR/docker/controlled-entrypoint.sh"
 check_healthcheck "$ROOT_DIR/docker/controlled-healthcheck.sh"

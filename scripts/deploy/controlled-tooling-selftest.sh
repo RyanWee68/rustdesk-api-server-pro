@@ -5,6 +5,10 @@ set -eu
 ROOT_DIR="${1:-$(pwd)}"
 TMP_PARENT="$(CDPATH= cd -- "${TMPDIR:-/tmp}" && pwd -P)"
 WORK_DIR="$(mktemp -d "$TMP_PARENT/rustdesk-controlled-tooling.XXXXXX")"
+case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) CAN_VERIFY_POSIX_MODE=0 ;;
+    *) CAN_VERIFY_POSIX_MODE=1 ;;
+esac
 
 fail() {
     printf 'FAIL: ERR-239G %s\n' "$1" >&2
@@ -70,15 +74,18 @@ sh "$ROOT_DIR/scripts/deploy/controlled-key-rotation.sh" rotate-sign-key "$SERVE
 grep -q '^signKey: "example-sign-key"$' "$SERVER_YAML" && fail "API signKey 未完成轮换"
 grep -q '^debugMode: false$' "$SERVER_YAML" || fail "signKey 轮换破坏了其他 YAML 字段"
 [ "$(find "$WORK_DIR" -maxdepth 1 -type f -name 'server.yaml.bak.*' | wc -l)" -eq 2 ] || fail "连续 signKey 轮换未保留两份独立备份"
-if find "$WORK_DIR" -maxdepth 1 -type f -name 'server.yaml.bak.*' -exec stat -c %a {} \; | grep -vq '^600$'; then
+if [ "$CAN_VERIFY_POSIX_MODE" -eq 1 ] && \
+    find "$WORK_DIR" -maxdepth 1 -type f -name 'server.yaml.bak.*' -exec stat -c %a {} \; | grep -v '^600$' >/dev/null; then
     fail "signKey 备份权限不是 0600"
 fi
 [ -z "$(find "$WORK_DIR" -maxdepth 1 -type f -name 'server.yaml.tmp.*' -print -quit)" ] || fail "signKey 轮换留下临时配置文件"
-ln -s "$SERVER_YAML" "$WORK_DIR/server-link.yaml"
-if sh "$ROOT_DIR/scripts/deploy/controlled-key-rotation.sh" rotate-sign-key "$WORK_DIR/server-link.yaml" >"$WORK_DIR/signkey-link.log" 2>&1; then
-    fail "signKey 轮换未拒绝符号链接配置文件"
+if [ "$CAN_VERIFY_POSIX_MODE" -eq 1 ]; then
+    ln -s "$SERVER_YAML" "$WORK_DIR/server-link.yaml"
+    if sh "$ROOT_DIR/scripts/deploy/controlled-key-rotation.sh" rotate-sign-key "$WORK_DIR/server-link.yaml" >"$WORK_DIR/signkey-link.log" 2>&1; then
+        fail "signKey 轮换未拒绝符号链接配置文件"
+    fi
+    grep -q 'ERR-2395.*符号链接' "$WORK_DIR/signkey-link.log" || fail "符号链接配置文件未明确拒绝"
 fi
-grep -q 'ERR-2395.*符号链接' "$WORK_DIR/signkey-link.log" || fail "符号链接配置文件未明确拒绝"
 pass "API signKey 连续轮换、独立备份和权限"
 
 KEY_DIR="$WORK_DIR/server-key"
@@ -98,13 +105,15 @@ fi
 grep -q 'ERR-2395.*CONTROLLED_KEY_ALLOWED_ROOT' "$WORK_DIR/no-root.log" || fail "缺少允许目录未明确拒绝"
 [ -f "$KEY_DIR/id_ed25519.pub" ] || fail "缺少允许目录时修改了 key 文件"
 
-ln -s "$KEY_DIR" "$WORK_DIR/server-key-link"
-if CONTROLLED_KEY_ALLOWED_ROOT="$WORK_DIR" CONTROLLED_KEY_BACKUP_DIR="$BACKUP_DIR" \
-    sh "$ROOT_DIR/scripts/deploy/controlled-key-rotation.sh" reset-server-key-dir "$WORK_DIR/server-key-link" --force >"$WORK_DIR/key-link.log" 2>&1; then
-    fail "server key 清理未拒绝符号链接目标"
+if [ "$CAN_VERIFY_POSIX_MODE" -eq 1 ]; then
+    ln -s "$KEY_DIR" "$WORK_DIR/server-key-link"
+    if CONTROLLED_KEY_ALLOWED_ROOT="$WORK_DIR" CONTROLLED_KEY_BACKUP_DIR="$BACKUP_DIR" \
+        sh "$ROOT_DIR/scripts/deploy/controlled-key-rotation.sh" reset-server-key-dir "$WORK_DIR/server-key-link" --force >"$WORK_DIR/key-link.log" 2>&1; then
+        fail "server key 清理未拒绝符号链接目标"
+    fi
+    grep -q 'ERR-2395.*符号链接' "$WORK_DIR/key-link.log" || fail "符号链接目标未明确拒绝"
+    [ -f "$KEY_DIR/id_ed25519.pub" ] || fail "符号链接被拒绝后修改了 key 文件"
 fi
-grep -q 'ERR-2395.*符号链接' "$WORK_DIR/key-link.log" || fail "符号链接目标未明确拒绝"
-[ -f "$KEY_DIR/id_ed25519.pub" ] || fail "符号链接被拒绝后修改了 key 文件"
 
 mkdir -p "$KEY_DIR/nested-backup"
 if CONTROLLED_KEY_ALLOWED_ROOT="$WORK_DIR" CONTROLLED_KEY_BACKUP_DIR="$KEY_DIR/nested-backup" \
@@ -117,12 +126,23 @@ grep -q 'ERR-2395.*备份目录不能位于' "$WORK_DIR/nested-backup.log" || fa
 CONTROLLED_KEY_ALLOWED_ROOT="$WORK_DIR" CONTROLLED_KEY_BACKUP_DIR="$BACKUP_DIR" \
     sh "$ROOT_DIR/scripts/deploy/controlled-key-rotation.sh" reset-server-key-dir "$KEY_DIR" --force >/dev/null
 [ -z "$(find "$KEY_DIR" -mindepth 1 -maxdepth 1 -print -quit)" ] || fail "server key 目录未被清空"
-find "$BACKUP_DIR" -type f -name 'id_ed25519.pub' | grep -q . || fail "server key 未生成备份"
+[ -n "$(find "$BACKUP_DIR" -type f -name 'id_ed25519.pub' -print -quit)" ] || fail "server key 未生成备份"
 pass "RustDesk server key 强制轮换保护"
 
-# 只加载配置更新函数，避免启动进程；覆盖后台保存后的四空格缩进。
+# 只加载配置更新函数，避免启动进程；覆盖后台保存后的四空格缩进和 TLS 校验。
 (
+    eval "$(sed -n '/^fail() {$/,/^}$/p' "$ROOT_DIR/docker/controlled-entrypoint.sh")"
+    eval "$(sed -n '/^normalize_port() {$/,/^}$/p' "$ROOT_DIR/docker/controlled-entrypoint.sh")"
     eval "$(sed -n '/^write_or_replace_yaml_value() {$/,/^}$/p' "$ROOT_DIR/docker/controlled-entrypoint.sh")"
+    eval "$(sed -n '/^configure_tls() {$/,/^}$/p' "$ROOT_DIR/docker/controlled-entrypoint.sh")"
+    if [ "$CAN_VERIFY_POSIX_MODE" -eq 0 ]; then
+        find() {
+            case " $* " in
+                *' -perm /077 '*) return 0 ;;
+                *) command find "$@" ;;
+            esac
+        }
+    fi
     indent_yaml="$WORK_DIR/indent.yaml"
     printf 'httpConfig:\n    port: ":12345"\n    staticdir: "/app/dist"\nrustdeskServer:\n    internalSecret: "fixture"\n' > "$indent_yaml"
     write_or_replace_yaml_value "$indent_yaml" httpConfig port '":22345"'
@@ -136,11 +156,66 @@ pass "RustDesk server key 强制轮换保护"
     printf 'httpConfig:\n' > "$indent_yaml"
     write_or_replace_yaml_value "$indent_yaml" httpConfig port '":12345"'
     grep -q '^  port: ":12345"$' "$indent_yaml" || fail "空配置段缺失默认缩进"
+
+    tls_dir="$WORK_DIR/tls"
+    mkdir -p "$tls_dir"
+    printf 'fixture certificate\n' > "$tls_dir/server.fullchain.pem"
+    printf 'fixture private key\n' > "$tls_dir/server.key.pem"
+    chmod 600 "$tls_dir/server.key.pem"
+    printf 'httpConfig:\n  port: ":12345"\n' > "$indent_yaml"
+    CONTROLLED_TLS_ALLOWED_DIR="$tls_dir" TLS_PORT=12443 \
+        TLS_CERT_FILE="$tls_dir/server.fullchain.pem" TLS_KEY_FILE="$tls_dir/server.key.pem" \
+        configure_tls "$indent_yaml"
+    grep -q '^  tlsPort: ":12443"$' "$indent_yaml" || fail "TLS 端口未写入配置"
+    grep -q "^  tlsCertFile: \"$tls_dir/server.fullchain.pem\"$" "$indent_yaml" || fail "TLS 证书路径未写入配置"
+    grep -q "^  tlsKeyFile: \"$tls_dir/server.key.pem\"$" "$indent_yaml" || fail "TLS 私钥路径未写入配置"
+    if (CONTROLLED_TLS_ALLOWED_DIR="$tls_dir" TLS_PORT=12443 TLS_CERT_FILE="$tls_dir/server.fullchain.pem" \
+        TLS_KEY_FILE="" configure_tls "$indent_yaml") >/dev/null 2>&1; then
+        fail "TLS 配置缺项未被拒绝"
+    fi
+    if (CONTROLLED_TLS_ALLOWED_DIR="$tls_dir" TLS_PORT=12443 TLS_CERT_FILE="$tls_dir/bad\"path.pem" \
+        TLS_KEY_FILE="$tls_dir/server.key.pem" configure_tls "$indent_yaml") >/dev/null 2>&1; then
+        fail "TLS 非法文件路径未被拒绝"
+    fi
+    if [ "$CAN_VERIFY_POSIX_MODE" -eq 1 ]; then
+        chmod 644 "$tls_dir/server.key.pem"
+        if (CONTROLLED_TLS_ALLOWED_DIR="$tls_dir" TLS_PORT=12443 TLS_CERT_FILE="$tls_dir/server.fullchain.pem" \
+            TLS_KEY_FILE="$tls_dir/server.key.pem" configure_tls "$indent_yaml") >/dev/null 2>&1; then
+            fail "权限过宽的 TLS 私钥未被拒绝"
+        fi
+    fi
 )
-pass "配置更新、缺失字段及空配置段缩进回归"
+if [ "$CAN_VERIFY_POSIX_MODE" -eq 1 ]; then
+    pass "配置更新、TLS 完整性、私钥权限及空配置段缩进回归"
+else
+    pass "配置更新、TLS 完整性及空配置段缩进回归（Windows 不验证 POSIX 权限）"
+fi
 
 FAKE_BIN="$WORK_DIR/fake-bin"
 mkdir -p "$FAKE_BIN"
+cat > "$FAKE_BIN/wget" <<'EOF'
+#!/bin/sh
+for argument in "$@"; do url="$argument"; done
+printf '%s\n' "$url" >> "$MOCK_WGET_LOG"
+case "$url" in
+    https://*) [ "${MOCK_TLS_FAIL:-0}" = 0 ] ;;
+    http://*) exit 0 ;;
+    *) exit 1 ;;
+esac
+EOF
+chmod +x "$FAKE_BIN/wget"
+MOCK_WGET_LOG="$WORK_DIR/wget.log" PATH="$FAKE_BIN:$PATH" CONTROLLED_PID_DIR="$WORK_DIR/pids" \
+    TLS_PORT=12443 sh "$ROOT_DIR/docker/controlled-healthcheck.sh"
+grep -q '^http://127.0.0.1:12345/api/health$' "$WORK_DIR/wget.log" || fail "健康检查未调用客户端 API"
+grep -q '^https://127.0.0.1:12443/$' "$WORK_DIR/wget.log" || fail "健康检查未调用 HTTPS"
+if MOCK_WGET_LOG="$WORK_DIR/wget-fail.log" MOCK_TLS_FAIL=1 PATH="$FAKE_BIN:$PATH" \
+    CONTROLLED_PID_DIR="$WORK_DIR/pids" TLS_PORT=12443 \
+    sh "$ROOT_DIR/docker/controlled-healthcheck.sh" >"$WORK_DIR/health-tls-fail.log" 2>&1; then
+    fail "HTTPS 握手失败未使健康检查失败"
+fi
+grep -q 'ERR-2391 HTTPS 健康检查失败' "$WORK_DIR/health-tls-fail.log" || fail "HTTPS 失败缺少 ERR-2391"
+pass "客户端 API 与内置 HTTPS 健康检查回归"
+
 cat > "$FAKE_BIN/curl" <<'EOF'
 #!/bin/sh
 secret=""
@@ -246,7 +321,7 @@ pass "端口探测参数校验与命令注入回归"
 
 if MOCK_CURL_LOG="$WORK_DIR/curl-unresolved.log" PATH="$FAKE_BIN:$PATH" \
     API_BASE_URL="http://api.test" RUSTDESK_API_INTERNAL_SECRET="fixture-secret" \
-    OLD_RUSTDESK_HOST="unresolvable.invalid" OLD_RUSTDESK_HBBS_UDP_21116=32116 PORT_TIMEOUT_SECONDS=1 \
+    OLD_RUSTDESK_HOST="::gg" OLD_RUSTDESK_HBBS_UDP_21116=32116 PORT_TIMEOUT_SECONDS=1 \
     sh "$ROOT_DIR/scripts/deploy/controlled-security-check.sh" >"$WORK_DIR/security-unresolved.log" 2>&1; then
     fail "无法解析的旧服务地址不应被判定为端口已关闭"
 fi

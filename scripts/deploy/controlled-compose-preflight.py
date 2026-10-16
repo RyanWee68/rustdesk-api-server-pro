@@ -5,8 +5,10 @@ import copy
 import ipaddress
 import json
 from pathlib import Path
+import re
 import subprocess
 import sys
+import tempfile
 
 
 def require(condition, message):
@@ -32,8 +34,9 @@ def verify(config):
     require(api.get("environment", {}).get("CONTROLLED_API_ONLY") == "1", "API 必须使用专用运行模式")
     require(api.get("environment", {}).get("PORT") == "12345"
             and api.get("environment", {}).get("ADMIN_PORT") == "12346", "API 容器端口与部署契约不一致")
+    tls_env = {name: api_env.get(name, "") for name in ("TLS_PORT", "TLS_CERT_FILE", "TLS_KEY_FILE")}
     expected_ports = {
-        api_name: {(12345, "tcp"), (12346, "tcp")},
+        api_name: {(12345, "tcp"), (12346, "tcp"), (12443, "tcp")},
         "rustdesk-hbbs": {(21115, "tcp"), (21116, "tcp"), (21116, "udp"), (21118, "tcp")},
         "rustdesk-hbbr": {(21117, "tcp"), (21119, "tcp")},
     }
@@ -65,8 +68,23 @@ def verify(config):
             elif target in {21118, 21119}:
                 require(ipaddress.ip_address(port.get("host_ip", "0.0.0.0")).is_loopback,
                         "WebSocket 端口必须仅绑定回环地址")
-        require(len(actual_ports) == len(expected_ports[name]) and set(actual_ports) == expected_ports[name],
-                "正式三容器缺少必需 TCP/UDP 端口或存在重复发布")
+        require(len(actual_ports) == len(set(actual_ports)), "正式三容器存在重复端口发布")
+        if name == api_name:
+            require((12345, "tcp") in actual_ports
+                    and bool(set(actual_ports) & {(12346, "tcp"), (12443, "tcp")}),
+                    "API 必须发布客户端端口及至少一个管理入口")
+            if (12443, "tcp") in actual_ports:
+                require(tls_env["TLS_PORT"] == "12443", "HTTPS 端口与 TLS_PORT 不一致")
+                require(all(isinstance(tls_env[key], str) and tls_env[key].startswith("/app/data/tls/")
+                            and ".." not in Path(tls_env[key]).parts
+                            and re.fullmatch(r"/app/data/tls/[A-Za-z0-9_.-]+", tls_env[key])
+                            for key in ("TLS_CERT_FILE", "TLS_KEY_FILE")),
+                        "TLS 证书和私钥必须位于持久化数据目录的 tls 子目录")
+                require(tls_env["TLS_CERT_FILE"] != tls_env["TLS_KEY_FILE"], "TLS 证书和私钥不能使用同一路径")
+            else:
+                require(not any(tls_env.values()), "未发布 HTTPS 端口时禁止残留 TLS 环境配置")
+        else:
+            require(set(actual_ports) == expected_ports[name], "正式三容器缺少必需 TCP/UDP 端口")
         if name != api_name:
             env = service.get("environment", {})
             require(env.get("MUST_LOGIN") == "1" and env.get("API_INTERNAL_SECRET") == secret,
@@ -135,6 +153,20 @@ def self_test():
     lan_config = copy.deepcopy(config)
     lan_config["services"][api_name]["ports"][0]["host_ip"] = "192.168.0.211"
     verify(lan_config)
+    tls_config = copy.deepcopy(config)
+    tls_config["services"][api_name]["ports"] = [
+        {"target": 12345, "published": "22345"},
+        {"target": 12443, "published": "22346"},
+    ]
+    tls_config["services"][api_name]["environment"].update({
+        "TLS_PORT": "12443",
+        "TLS_CERT_FILE": "/app/data/tls/server.fullchain.pem",
+        "TLS_KEY_FILE": "/app/data/tls/server.key.pem",
+    })
+    verify(tls_config)
+    tls_config["services"][api_name]["ports"].append(
+        {"target": 12346, "host_ip": "192.168.0.211", "published": "22347"})
+    verify(tls_config)
     mutations = (
         lambda s: s[api_name]["ports"][0].update(host_ip="0.0.0.0"),
         lambda s: s["rustdesk-hbbs"]["ports"][0].pop("host_ip"),
@@ -158,6 +190,10 @@ def self_test():
         lambda s: s[api_name]["ports"][1].pop("published"),
         lambda s: s[api_name]["ports"][0].update(host_ip="169.254.1.1"),
         lambda s: s[api_name]["ports"][0].update(host_ip="8.8.8.8"),
+        lambda s: s[api_name]["ports"].pop(0),
+        lambda s: s[api_name]["ports"].pop(1),
+        lambda s: s[api_name]["ports"].append(copy.deepcopy(s[api_name]["ports"][0])),
+        lambda s: s[api_name]["ports"].append({"target": 12443, "protocol": "udp", "published": "22346"}),
     )
     for mutate in mutations:
         invalid = copy.deepcopy(config)
@@ -167,6 +203,24 @@ def self_test():
         except RuntimeError:
             continue
         raise RuntimeError("ERR-2393 危险 Compose 配置未被拒绝")
+    tls_mutations = (
+        lambda s: s[api_name]["ports"][2].update(host_ip="0.0.0.0"),
+        lambda s: s[api_name]["ports"][2].update(host_ip="::"),
+        lambda s: s[api_name]["ports"][2].pop("host_ip"),
+        lambda s: s[api_name]["ports"].append(copy.deepcopy(s[api_name]["ports"][1])),
+        lambda s: s[api_name]["environment"].update(TLS_PORT="12444"),
+        lambda s: s[api_name]["environment"].update(TLS_CERT_FILE="/tmp/server.pem"),
+        lambda s: s[api_name]["environment"].update(TLS_KEY_FILE="/app/data/tls/server.fullchain.pem"),
+        lambda s: s[api_name]["environment"].update(TLS_CERT_FILE='/app/data/tls/bad"path.pem'),
+    )
+    for mutate in tls_mutations:
+        invalid = copy.deepcopy(tls_config)
+        mutate(invalid["services"])
+        try:
+            verify(invalid)
+        except RuntimeError:
+            continue
+        raise RuntimeError("ERR-2393 HTTPS 部署中的不安全管理端口未被拒绝")
     for mutate in (
         lambda c: c["volumes"].pop("key"),
         lambda c: c["volumes"]["key"].update(external=True),
@@ -213,14 +267,41 @@ def self_test():
     print("PASS: 最终配置预检拒绝 " + str(len(mutations) + 4) + " 类不安全覆盖")
     print("PASS: 新数据目录相同、子目录、父目录及根目录均被拒绝")
     print("PASS: 当前受控容器复检不误拒，旧容器与保留容器仍保护数据目录")
+    print("PASS: 仅 HTTPS 及 HTTPS 加内网 HTTP 通过，" + str(len(tls_mutations)) + " 类不安全 TLS 覆盖被拒绝")
+    with tempfile.TemporaryDirectory(prefix="rustdesk-compose-preflight-") as directory:
+        path = Path(directory) / "compose.json"
+        path.write_text(json.dumps(tls_config), encoding="utf-8")
+        result = subprocess.run([sys.executable, __file__, "--config-json", str(path)],
+                                capture_output=True, timeout=15)
+        require(result.returncode == 0 and b"WARN:" in result.stdout,
+                "离线 JSON 检查未通过或未说明静态边界")
+        tls_config["services"][api_name]["ports"][2]["host_ip"] = "0.0.0.0"
+        path.write_text(json.dumps(tls_config), encoding="utf-8")
+        result = subprocess.run([sys.executable, __file__, "--config-json", str(path)],
+                                capture_output=True, timeout=15)
+        require(result.returncode != 0 and b"ERR-2393" in result.stderr,
+                "离线 JSON 检查未拒绝不安全配置")
+        require(("x" * 48).encode() not in result.stdout + result.stderr,
+                "离线 JSON 检查输出了内部密钥")
+        path.write_text("{", encoding="utf-8")
+        result = subprocess.run([sys.executable, __file__, "--config-json", str(path)],
+                                capture_output=True, timeout=15)
+        require(result.returncode != 0 and b"ERR-2393" in result.stderr,
+                "离线 JSON 检查未拒绝损坏输入")
+    print("PASS: 离线 JSON 命令的正常、拒绝、损坏输入及不泄密路径通过")
 
 
 if __name__ == "__main__":
     try:
         if sys.argv[1:] == ["--self-test"]:
             self_test()
+        elif len(sys.argv) == 3 and sys.argv[1] == "--config-json":
+            with open(sys.argv[2], encoding="utf-8") as source:
+                verify(json.load(source))
+            print("PASS: 离线 Compose JSON 契约检查通过")
+            print("WARN: 仅静态检查，未检查宿主挂载重叠、卷来源、端口占用、TLS 配置、证书或实际网络")
         else:
-            require(len(sys.argv) == 2, "用法：controlled-compose-preflight.py <正式三容器 Compose>|--self-test")
+            require(len(sys.argv) == 2, "用法：controlled-compose-preflight.py <正式三容器 Compose>|--config-json <JSON 文件>|--self-test")
             result = subprocess.run(["docker", "compose", "-f", sys.argv[1], "config", "--format", "json"],
                                     capture_output=True, timeout=30)
             require(result.returncode == 0, "Compose 解析失败，请在主机本地核对私有环境配置")
@@ -236,7 +317,8 @@ if __name__ == "__main__":
                 originals = json.loads(inspected.stdout)
             for original in originals:
                 verify_data_separation(config, original)
-            print("PASS: 最终 Compose 鉴权、回环端口、运行模式、健康依赖和密钥卷一致")
+            print("PASS: 最终 Compose 鉴权、管理/WebSocket 绑定、运行模式、健康依赖和密钥卷一致")
+            print("WARN: TLS 端口发布不证明启用加密，仍须核对配置、证书和运行时 HTTPS/明文拒绝")
             print("PASS: 新 API 数据目录未与当前原容器挂载重叠（不代表正式端口可用）")
     except Exception as error:
         print(str(error) if isinstance(error, RuntimeError) else "ERR-2393 最终配置预检失败：" + type(error).__name__, file=sys.stderr)

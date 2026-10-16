@@ -74,6 +74,33 @@ write_or_replace_yaml_value() {
     rm -f "$tmp_yaml"
 }
 
+configure_tls() {
+    config_file="$1"
+    tls_values="${TLS_PORT:-}${TLS_CERT_FILE:-}${TLS_KEY_FILE:-}"
+    [ -n "$tls_values" ] || return 0
+    [ -n "${TLS_PORT:-}" ] && [ -n "${TLS_CERT_FILE:-}" ] && [ -n "${TLS_KEY_FILE:-}" ] || \
+        fail "TLS_PORT、TLS_CERT_FILE 和 TLS_KEY_FILE 必须同时设置"
+
+    tls_port="$(normalize_port "$TLS_PORT")"
+    case "$tls_port" in
+        ''|*[!0-9]*) fail "TLS_PORT 必须是有效端口" ;;
+    esac
+    [ "$tls_port" -ge 1 ] && [ "$tls_port" -le 65535 ] || fail "TLS_PORT 必须是有效端口"
+
+    tls_allowed_dir="${CONTROLLED_TLS_ALLOWED_DIR:-/app/data/tls}"
+    case "$TLS_CERT_FILE" in "$tls_allowed_dir"/*) ;; *) fail "TLS_CERT_FILE 必须位于 $tls_allowed_dir" ;; esac
+    case "$TLS_KEY_FILE" in "$tls_allowed_dir"/*) ;; *) fail "TLS_KEY_FILE 必须位于 $tls_allowed_dir" ;; esac
+    case "$TLS_CERT_FILE$TLS_KEY_FILE" in *[!A-Za-z0-9_./-]*) fail "TLS 文件路径包含非法字符" ;; esac
+    [ "$TLS_CERT_FILE" != "$TLS_KEY_FILE" ] || fail "TLS 证书和私钥不能使用同一文件"
+    [ ! -L "$TLS_CERT_FILE" ] && [ -f "$TLS_CERT_FILE" ] && [ -r "$TLS_CERT_FILE" ] || fail "TLS 证书不存在、不可读或为符号链接"
+    [ ! -L "$TLS_KEY_FILE" ] && [ -f "$TLS_KEY_FILE" ] && [ -r "$TLS_KEY_FILE" ] || fail "TLS 私钥不存在、不可读或为符号链接"
+    [ -z "$(find "$TLS_KEY_FILE" -perm /077 -print -quit)" ] || fail "TLS 私钥不能允许组或其他用户访问"
+
+    write_or_replace_yaml_value "$config_file" httpConfig tlsPort "\":$tls_port\""
+    write_or_replace_yaml_value "$config_file" httpConfig tlsCertFile "\"$TLS_CERT_FILE\""
+    write_or_replace_yaml_value "$config_file" httpConfig tlsKeyFile "\"$TLS_KEY_FILE\""
+}
+
 wait_api_health() {
     health_port="$(normalize_port "$PORT")"
     health_url="http://127.0.0.1:${health_port}/api/health"
@@ -117,6 +144,9 @@ ADMIN_USER="${ADMIN_USER:-}"
 ADMIN_PASS="${ADMIN_PASS:-}"
 PORT="${PORT:-12345}"
 ADMIN_PORT="${ADMIN_PORT:-12346}"
+TLS_PORT="${TLS_PORT:-}"
+TLS_CERT_FILE="${TLS_CERT_FILE:-}"
+TLS_KEY_FILE="${TLS_KEY_FILE:-}"
 RUSTDESK_API_INTERNAL_SECRET="${RUSTDESK_API_INTERNAL_SECRET:-}"
 RUSTDESK_AUTH_CACHE_SECONDS="${RUSTDESK_AUTH_CACHE_SECONDS:-60}"
 MUST_LOGIN="${MUST_LOGIN:-1}"
@@ -167,6 +197,7 @@ if [ -f /app/data/server.yaml ]; then
     case "$admin_port_val" in :*) ;; *) admin_port_val=":$admin_port_val" ;; esac
     write_or_replace_yaml_value /app/data/server.yaml httpConfig port "\"$port_val\""
     write_or_replace_yaml_value /app/data/server.yaml httpConfig adminPort "\"$admin_port_val\""
+    configure_tls /app/data/server.yaml
     write_or_replace_yaml_value /app/data/server.yaml rustdeskServer internalSecret "\"$RUSTDESK_API_INTERNAL_SECRET\""
     write_or_replace_yaml_value /app/data/server.yaml rustdeskServer authCacheSeconds "$RUSTDESK_AUTH_CACHE_SECONDS"
 
@@ -179,7 +210,8 @@ if [ -f /app/data/server.yaml ]; then
     esac
 fi
 
-export ADMIN_USER ADMIN_PASS PORT ADMIN_PORT RUSTDESK_API_INTERNAL_SECRET RUSTDESK_AUTH_CACHE_SECONDS
+export ADMIN_USER ADMIN_PASS PORT ADMIN_PORT TLS_PORT TLS_CERT_FILE TLS_KEY_FILE
+export RUSTDESK_API_INTERNAL_SECRET RUSTDESK_AUTH_CACHE_SECONDS
 export MUST_LOGIN API_SERVER API_INTERNAL_SECRET AUTH_CACHE_SECONDS RUSTDESK_KEY_DIR
 export APP_VERSION="${APP_VERSION:-latest}"
 export BUILD_TIME="${BUILD_TIME:-}"

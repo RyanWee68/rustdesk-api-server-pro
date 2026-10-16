@@ -1,0 +1,8 @@
+services:
+  rustdesk-api-server-pro:
+    environment:
+      - "TLS_PORT=12443"
+      - "TLS_CERT_FILE=/app/data/tls/server.fullchain.pem"
+      - "TLS_KEY_FILE=/app/data/tls/server.key.pem"
+    ports:
+      - "${FNOS_ADMIN_HTTPS_PORT:-12443}:12443/tcp"
