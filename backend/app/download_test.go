@@ -115,3 +115,27 @@ func TestDownloadRejectsDirectories(t *testing.T) {
 		t.Fatalf("directory status=%d", response.Code)
 	}
 }
+
+// TestDownloadRejectsSymlinks 验证固定下载名不能通过符号链接公开目录外文件。
+func TestDownloadRejectsSymlinks(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(t.TempDir(), "private.key")
+	if err := os.WriteFile(target, []byte("private-material"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "rustdesk.jtzxsoft.com.cert.cer")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("当前系统不能创建符号链接：%v", err)
+	}
+
+	application := iris.New()
+	SetDownloadRoutes(application, dir)
+	if err := application.Build(); err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	application.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/downloads/rustdesk.jtzxsoft.com.cert.cer", nil))
+	if response.Code != http.StatusNotFound || response.Body.String() == "private-material" {
+		t.Fatalf("symlink status=%d body=%q", response.Code, response.Body.String())
+	}
+}

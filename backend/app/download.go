@@ -19,7 +19,7 @@ func SetDownloadRoutes(app *iris.Application, downloadDir string) {
 	for routePath, fileName := range publicDownloads {
 		path := filepath.Join(downloadDir, fileName)
 		app.Get(routePath, func(ctx iris.Context) {
-			info, err := os.Stat(path)
+			info, err := os.Lstat(path)
 			if err != nil || !info.Mode().IsRegular() {
 				ctx.StopWithJSON(iris.StatusNotFound, iris.Map{
 					"code":    errcode.ERRB007.Code,
