@@ -341,6 +341,23 @@ check_healthcheck() {
     fi
 }
 
+check_api_smoke() {
+    file="$1"
+    require_file "$file"
+    [ -f "$file" ] || return
+
+    if contains "$file" 'dsn: "server\.db"' && contains "$file" 'staticdir: "app-dist"'; then
+        pass "临时 API smoke 使用跨平台相对数据路径"
+    else
+        fail "临时 API smoke 不得把 Git Bash 临时绝对路径写入 Windows API 配置"
+    fi
+    if contains "$file" 'exec \./rustdesk-api-server-pro\.exe start'; then
+        pass "临时 API smoke 可按记录 PID 回收服务进程"
+    else
+        fail "临时 API smoke 启动服务时必须使用 exec 以可靠回收进程"
+    fi
+}
+
 check_linux_line_endings() {
     cr="$(printf '\r')"
     for file in \
@@ -370,6 +387,7 @@ check_tls_compose "$ROOT_DIR/docker-compose.controlled-tls.yaml"
 check_compose "$ROOT_DIR/docker-compose.controlled-one.yaml" "一体化 Compose"
 check_entrypoint "$ROOT_DIR/docker/controlled-entrypoint.sh"
 check_healthcheck "$ROOT_DIR/docker/controlled-healthcheck.sh"
+check_api_smoke "$ROOT_DIR/scripts/deploy/controlled-api-smoke.sh"
 check_linux_line_endings
 
 if [ "$failures" -gt 0 ]; then

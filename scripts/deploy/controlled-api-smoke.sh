@@ -86,12 +86,12 @@ signKey: "$API_SMOKE_SIGN_KEY"
 debugMode: false
 db:
   driver: "sqlite"
-  dsn: "$WORK_DIR/server.db"
+  dsn: "server.db"
   timeZone: "Asia/Shanghai"
   showSql: false
 httpConfig:
   printRequestLog: false
-  staticdir: "$WORK_DIR/app-dist"
+  staticdir: "app-dist"
   port: ":$API_SMOKE_PORT"
   adminPort: ":$API_SMOKE_ADMIN_PORT"
 rustdeskServer:
@@ -130,7 +130,7 @@ fi
 
 (
     cd "$WORK_DIR"
-    ./rustdesk-api-server-pro.exe start > "$WORK_DIR/server.log" 2>&1
+    exec ./rustdesk-api-server-pro.exe start > "$WORK_DIR/server.log" 2>&1
 ) &
 SERVER_PID="$!"
 
