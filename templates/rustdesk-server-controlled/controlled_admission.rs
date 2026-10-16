@@ -342,6 +342,7 @@ mod tests {
                         Err(error) => panic!("ERR-239B 接收测试请求失败：{}", error),
                     }
                 };
+                stream.set_nonblocking(false).unwrap();
                 stream.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
                 let mut bytes = Vec::new();
                 let mut buf = [0; 4096];
