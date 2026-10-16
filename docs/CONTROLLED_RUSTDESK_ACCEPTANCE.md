@@ -1,5 +1,13 @@
 # RustDesk 受控部署验收记录
 
+## 管理页证书与客户端分发验收（2026-10-16）
+
+- API 仓库提交 `41046ed` 新增“关于 → 客户端与证书”页面和两个固定下载接口；Go 全量测试、前端类型检查、生产构建及八种语言质量检查通过。提交只推送到用户仓库 `RyanWee68/rustdesk-api-server-pro` 的 `codex/release-followup`，证书和安装包没有进入 Git 或镜像仓库。
+- 0.211 使用正式 `Dockerfile.controlled` → `Dockerfile.controlled-api` 构建链生成 API 镜像 `sha256:e68f9b5dd80ed640727e0d3842b65334fa130a03d74cc61df656074ea4cd154b`。一次误用根通用 Dockerfile 的候选因没有受控入口和健康检查，在保护窗口内主动回滚；原镜像恢复 healthy 后才按正式链重建并再次切换。
+- 正式 Compose 新增 `192.168.0.211:22347 -> 12346/TCP`，局域网 HTTP 首页返回 200；公网 HTTPS `22346 -> 12443/TCP` 使用现有 PEM 完整校验证书后返回 200，向该 TLS 端口发送明文 HTTP 仍返回 400。`22347` 仅绑定局域网地址，未验证路由器是否存在额外公网转发，路由器不得转发该端口。
+- HTTPS 下载后的 Windows DER 证书 SHA-256 为 `f56a892ab90b0e85687403979d5f9901084b6e2657c74eff6dc9e93aede0d96d`；RustDesk 1.4.9 x86_64 安装包 SHA-256 为 `eaedeb0088e687bf46f7c46a9c6ea5493ce51f3134dfd6acbedb47b5b9136274`，与上传源文件一致。局域网 HTTP 安装包下载摘要同样一致；未知下载名和编码路径穿越均返回 404。
+- 切换后 API、hbbs、hbbr 均 healthy，客户端 API `/api/health` 返回 200，`22118/22119` 继续只绑定回环，近五分钟 API 日志没有 `ERR`、`panic` 或 `fatal`。10 分钟自动回滚已取消，旧 Compose、旧运行变量和回滚脚本继续保留。
+
 ## 公网普通连接自动中继验收（2026-10-16）
 
 - 故障复现为官方 1.4.9 普通连接通过登录和连接检查后，直连失败转入自动中继，但旧 `hbbs` 未为目标端返回的 RelayResponse UUID 签发授权，`hbbr` 连续以 `ERR-2315` 关闭连接。客户端表现为“连接被对方关闭”；该问题不属于显式强制中继路径。
