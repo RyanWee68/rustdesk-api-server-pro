@@ -90,6 +90,65 @@ check_internal_api_auth() {
     fi
 }
 
+check_management_https() {
+    https_url="${ADMIN_HTTPS_URL:-}"
+    ca_file="${ADMIN_TLS_CA_FILE:-}"
+    if [ -z "$https_url" ] && [ -z "$ca_file" ]; then
+        warn "未设置 ADMIN_HTTPS_URL 和 ADMIN_TLS_CA_FILE，跳过管理页 HTTPS 实测"
+        return
+    fi
+    if [ -z "$https_url" ] || [ -z "$ca_file" ]; then
+        fail "ADMIN_HTTPS_URL 和 ADMIN_TLS_CA_FILE 必须同时设置"
+        return
+    fi
+    if [ -L "$ca_file" ] || [ ! -f "$ca_file" ] || [ ! -r "$ca_file" ]; then
+        fail "管理页 HTTPS CA 文件不存在、不可读或为符号链接"
+        return
+    fi
+
+    case "$https_url" in
+        https://*/|https://*) ;;
+        *) fail "ADMIN_HTTPS_URL 必须使用 https://"; return ;;
+    esac
+    authority="${https_url#https://}"
+    authority="${authority%/}"
+    case "$authority" in
+        ""|*/*|*@*|*\?*|*\#*) fail "ADMIN_HTTPS_URL 只允许域名或 IPv4、显式端口和根路径"; return ;;
+    esac
+    host="${authority%:*}"
+    port="${authority##*:}"
+    if [ "$host" = "$authority" ]; then
+        fail "ADMIN_HTTPS_URL 必须包含有效的显式端口"
+        return
+    fi
+    if ! validate_endpoint "$host" "$port" "管理页 HTTPS"; then
+        return
+    fi
+    https_url="https://${authority}/"
+    http_url="http://${authority}/"
+
+    if ! https_status="$(curl -q --noproxy '*' --proto '=https' --tlsv1.2 --cacert "$ca_file" \
+        -sS -m "${HTTP_TIMEOUT_SECONDS:-5}" -o /dev/null -w '%{http_code}' -- "$https_url" 2>/dev/null)"; then
+        fail "管理页 HTTPS 证书或连接验证失败：$https_url"
+        return
+    fi
+    if [ "$https_status" != "200" ]; then
+        fail "管理页 HTTPS 返回 HTTP $https_status，预期 200"
+        return
+    fi
+    pass "管理页 HTTPS 证书和首页访问通过：$https_url"
+
+    http_status="000"
+    if http_result="$(curl -q --noproxy '*' --proto '=http' -sS -m "${HTTP_TIMEOUT_SECONDS:-5}" \
+        -o /dev/null -w '%{http_code}' -- "$http_url" 2>/dev/null)"; then
+        http_status="$http_result"
+    fi
+    case "$http_status" in
+        2??|3??) fail "管理页 TLS 端口仍接受明文 HTTP：$http_url（HTTP $http_status）" ;;
+        *) pass "管理页 TLS 端口拒绝明文 HTTP：$http_url" ;;
+    esac
+}
+
 select_python() {
     if have_cmd python3 && python3 --version >/dev/null 2>&1; then
         json_parser="python3"
@@ -220,6 +279,7 @@ check_old_service_shutdown() {
 }
 
 check_internal_api_auth
+check_management_https
 check_public_exposure
 check_old_service_shutdown
 

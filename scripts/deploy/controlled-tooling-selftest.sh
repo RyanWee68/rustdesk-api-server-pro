@@ -248,6 +248,17 @@ while [ "$#" -gt 0 ]; do
 done
 [ "$noproxy" -eq 1 ] || exit 1
 printf '%s\n' "$url" >> "$MOCK_CURL_LOG"
+case "$url" in
+    https://management.test:22346/)
+        [ "${MOCK_MANAGEMENT_MODE:-ok}" != "cert-fail" ] || exit 60
+        printf '200'
+        exit 0
+        ;;
+    http://management.test:22346/)
+        if [ "${MOCK_MANAGEMENT_MODE:-ok}" = "http-open" ]; then printf '200'; else printf '400'; fi
+        exit 0
+        ;;
+esac
 case "$secret" in
     ""|wrong-internal-secret-for-security-check)
         printf '{"allow":false,"code":"ERR-2301"}\n401\n'
@@ -293,6 +304,47 @@ if MOCK_CURL_LOG="$WORK_DIR/curl-spoof.log" MOCK_CORRECT_MODE=spoof PATH="$FAKE_
 fi
 grep -q 'ERR-2394' "$WORK_DIR/security-spoof.log" || fail "安全检查 JSON 失败路径缺少 ERR-2394"
 pass "内部 API 安全检查严格响应与无副作用回归"
+
+printf 'fixture public certificate\n' > "$WORK_DIR/management-ca.pem"
+MOCK_CURL_LOG="$WORK_DIR/curl-management.log" PATH="$FAKE_BIN:$PATH" \
+    API_BASE_URL="http://api.test" RUSTDESK_API_INTERNAL_SECRET="fixture-secret" \
+    ADMIN_HTTPS_URL="https://management.test:22346" ADMIN_TLS_CA_FILE="$WORK_DIR/management-ca.pem" \
+    sh "$ROOT_DIR/scripts/deploy/controlled-security-check.sh" >"$WORK_DIR/security-management.log" 2>&1
+grep -q 'PASS: 管理页 HTTPS 证书和首页访问通过' "$WORK_DIR/security-management.log" || fail "管理页 HTTPS 正向检查未通过"
+grep -q 'PASS: 管理页 TLS 端口拒绝明文 HTTP' "$WORK_DIR/security-management.log" || fail "管理页明文 HTTP 拒绝未通过"
+
+if MOCK_CURL_LOG="$WORK_DIR/curl-management-cert.log" MOCK_MANAGEMENT_MODE=cert-fail PATH="$FAKE_BIN:$PATH" \
+    API_BASE_URL="http://api.test" RUSTDESK_API_INTERNAL_SECRET="fixture-secret" \
+    ADMIN_HTTPS_URL="https://management.test:22346" ADMIN_TLS_CA_FILE="$WORK_DIR/management-ca.pem" \
+    sh "$ROOT_DIR/scripts/deploy/controlled-security-check.sh" >"$WORK_DIR/security-management-cert.log" 2>&1; then
+    fail "管理页 HTTPS 证书失败未被拒绝"
+fi
+grep -q 'ERR-2394.*HTTPS 证书或连接验证失败' "$WORK_DIR/security-management-cert.log" || fail "管理页证书失败缺少 ERR-2394"
+
+if MOCK_CURL_LOG="$WORK_DIR/curl-management-http.log" MOCK_MANAGEMENT_MODE=http-open PATH="$FAKE_BIN:$PATH" \
+    API_BASE_URL="http://api.test" RUSTDESK_API_INTERNAL_SECRET="fixture-secret" \
+    ADMIN_HTTPS_URL="https://management.test:22346" ADMIN_TLS_CA_FILE="$WORK_DIR/management-ca.pem" \
+    sh "$ROOT_DIR/scripts/deploy/controlled-security-check.sh" >"$WORK_DIR/security-management-http.log" 2>&1; then
+    fail "管理页 TLS 端口接受明文 HTTP 时安全检查未失败"
+fi
+grep -q 'ERR-2394.*仍接受明文 HTTP' "$WORK_DIR/security-management-http.log" || fail "管理页明文开放缺少 ERR-2394"
+
+if MOCK_CURL_LOG="$WORK_DIR/curl-management-url.log" PATH="$FAKE_BIN:$PATH" \
+    API_BASE_URL="http://api.test" RUSTDESK_API_INTERNAL_SECRET="fixture-secret" \
+    ADMIN_HTTPS_URL="https://management.test:22346/admin" ADMIN_TLS_CA_FILE="$WORK_DIR/management-ca.pem" \
+    sh "$ROOT_DIR/scripts/deploy/controlled-security-check.sh" >"$WORK_DIR/security-management-url.log" 2>&1; then
+    fail "管理页 HTTPS 检查接受了带路径的 URL"
+fi
+grep -q 'ERR-2394.*只允许域名或 IPv4' "$WORK_DIR/security-management-url.log" || fail "非法管理 URL 缺少 ERR-2394"
+
+if MOCK_CURL_LOG="$WORK_DIR/curl-management-missing.log" PATH="$FAKE_BIN:$PATH" \
+    API_BASE_URL="http://api.test" RUSTDESK_API_INTERNAL_SECRET="fixture-secret" \
+    ADMIN_HTTPS_URL="https://management.test:22346" ADMIN_TLS_CA_FILE="" \
+    sh "$ROOT_DIR/scripts/deploy/controlled-security-check.sh" >"$WORK_DIR/security-management-missing.log" 2>&1; then
+    fail "管理页 HTTPS URL 与 CA 缺项未被拒绝"
+fi
+grep -q 'ERR-2394.*必须同时设置' "$WORK_DIR/security-management-missing.log" || fail "管理页 HTTPS 缺项拒绝缺少 ERR-2394"
+pass "管理页受信任 HTTPS、证书失败和明文拒绝回归"
 
 INJECTION_MARKER="$WORK_DIR/port-injection"
 if MOCK_CURL_LOG="$WORK_DIR/curl-endpoint.log" PATH="$FAKE_BIN:$PATH" \

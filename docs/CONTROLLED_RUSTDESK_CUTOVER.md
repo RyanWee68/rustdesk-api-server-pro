@@ -60,6 +60,16 @@ python3 scripts/deploy/controlled-compose-preflight.py --config-json "$PRIVATE_C
 
 上述 JSON 含展开后的私有环境值，只能放在仓库外受保护目录并在使用后按既定运维流程处理。静态通过后仍须在目标主机运行完整预检；不能据此宣称证书、HTTPS 或端口实际可用。
 
+网络恢复后，从独立网络执行完整安全检查时，可额外提供公网管理 URL 和服务器 PEM 完整证书链。`ADMIN_TLS_CA_FILE` 使用服务端 `server.fullchain.pem` 一类 PEM 文件，不使用供 Windows 安装的 DER `.cer`；内部密钥仍从仓库外私有环境加载，不在命令记录中写明值。
+
+```bash
+export ADMIN_HTTPS_URL="https://rustdesk.jtzxsoft.com:22346"
+export ADMIN_TLS_CA_FILE="$PRIVATE_DEPLOY_DIR/data/tls/server.fullchain.pem"
+sh scripts/deploy/controlled-security-check.sh
+```
+
+该检查要求受信任 HTTPS 首页返回 200，并验证同端口明文 HTTP 不能返回 2xx/3xx。它不会替代浏览器证书安装、RustDesk 客户端连接、UDP 或独立公网端口扫描。
+
 ## 数据迁移演练
 
 当前候选程序 SHA-256 为 `0cda590ef066d686c0ade0bf678c449009de49fa681ebe14752667fe5050b8d3`；以下构建配方与 `132a6908...` 摘要描述的是前一迁移修复版，保留作历史记录。最新候选再次通过本节的原配置副本迁移、健康检查和原版恢复启动演练。
