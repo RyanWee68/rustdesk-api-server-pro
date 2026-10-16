@@ -201,7 +201,8 @@ check_public_exposure() {
     check_port_closed "$public_host" "${FNOS_ADMIN_HTTP_PORT:-12346}" "管理后台公网端口"
     check_port_closed "$public_host" "${RUSTDESK_HBBS_WEB_PORT:-21118}" "hbbs Web 公网端口"
     check_port_closed "$public_host" "${RUSTDESK_HBBR_WEB_PORT:-21119}" "hbbr Web 公网端口"
-    warn "公网 hbbs 21116/UDP 未经 TCP 探针验证，需从独立网络做协议级检查"
+    public_udp_port="${RUSTDESK_HBBS_UDP_21116:-${RUSTDESK_HBBS_TCP_21116:-21116}}"
+    warn "公网 hbbs ${public_udp_port}/UDP 未经 TCP 探针验证，需从独立网络做协议级检查"
 }
 
 check_old_service_shutdown() {
@@ -214,7 +215,8 @@ check_old_service_shutdown() {
     check_port_closed "$old_host" "${OLD_RUSTDESK_HBBS_21115:-21115}" "旧裸 hbbs 21115"
     check_port_closed "$old_host" "${OLD_RUSTDESK_HBBS_21116:-21116}" "旧裸 hbbs 21116"
     check_port_closed "$old_host" "${OLD_RUSTDESK_HBBR_21117:-21117}" "旧裸 hbbr 21117"
-    warn "旧裸 hbbs 21116/UDP 未经 TCP 探针验证，需从独立网络做协议级检查"
+    old_udp_port="${OLD_RUSTDESK_HBBS_UDP_21116:-${OLD_RUSTDESK_HBBS_21116:-21116}}"
+    warn "旧裸 hbbs ${old_udp_port}/UDP 未经 TCP 探针验证，需从独立网络做协议级检查"
 }
 
 check_internal_api_auth

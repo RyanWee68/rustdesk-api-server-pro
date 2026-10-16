@@ -246,13 +246,13 @@ pass "端口探测参数校验与命令注入回归"
 
 if MOCK_CURL_LOG="$WORK_DIR/curl-unresolved.log" PATH="$FAKE_BIN:$PATH" \
     API_BASE_URL="http://api.test" RUSTDESK_API_INTERNAL_SECRET="fixture-secret" \
-    OLD_RUSTDESK_HOST="unresolvable.invalid" PORT_TIMEOUT_SECONDS=1 \
+    OLD_RUSTDESK_HOST="unresolvable.invalid" OLD_RUSTDESK_HBBS_UDP_21116=32116 PORT_TIMEOUT_SECONDS=1 \
     sh "$ROOT_DIR/scripts/deploy/controlled-security-check.sh" >"$WORK_DIR/security-unresolved.log" 2>&1; then
     fail "无法解析的旧服务地址不应被判定为端口已关闭"
 fi
 grep -q 'ERR-2394.*无法确认已关闭' "$WORK_DIR/security-unresolved.log" || fail "旧服务地址解析失败未明确报告无法确认"
 grep -q 'PASS: 旧裸' "$WORK_DIR/security-unresolved.log" && fail "旧服务地址解析失败被误记为通过"
-grep -q '旧裸 hbbs 21116/UDP 未经 TCP 探针验证' "$WORK_DIR/security-unresolved.log" || fail "旧服务 UDP 暴露边界未标记为未验证"
+grep -q '旧裸 hbbs 32116/UDP 未经 TCP 探针验证' "$WORK_DIR/security-unresolved.log" || fail "旧服务 UDP 暴露边界未使用实际公网端口"
 
 if MOCK_CURL_LOG="$WORK_DIR/curl-timeout.log" PATH="$FAKE_BIN:$PATH" \
     API_BASE_URL="http://api.test" RUSTDESK_API_INTERNAL_SECRET="fixture-secret" \
