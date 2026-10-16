@@ -32,6 +32,13 @@ def verify(config):
     require(api.get("environment", {}).get("CONTROLLED_API_ONLY") == "1", "API 必须使用专用运行模式")
     require(api.get("environment", {}).get("PORT") == "12345"
             and api.get("environment", {}).get("ADMIN_PORT") == "12346", "API 容器端口与部署契约不一致")
+    expected_ports = {
+        api_name: {(12345, "tcp"), (12346, "tcp")},
+        "rustdesk-hbbs": {(21115, "tcp"), (21116, "tcp"), (21116, "udp"), (21118, "tcp")},
+        "rustdesk-hbbr": {(21117, "tcp"), (21119, "tcp")},
+    }
+    admin_lan_networks = tuple(ipaddress.ip_network(cidr) for cidr in
+                               ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
     for name, service in services.items():
         require(not service.get("privileged") and not service.get("network_mode"), "禁止特权或共享主机网络模式")
         require(service.get("image") and not service.get("build"), "正式服务必须指定已构建镜像")
@@ -42,14 +49,24 @@ def verify(config):
         if name == api_name:
             require(next(item for item in volumes if item["target"] == "/app/logs").get("type") == "volume",
                     "API 日志必须使用独立持久卷")
+        actual_ports = []
         for port in service.get("ports", []):
             require(isinstance(port, dict), "端口未规范化")
             target = int(port.get("target", 0))
-            expected = {api_name: {12345, 12346}, "rustdesk-hbbs": {21115, 21116, 21118}, "rustdesk-hbbr": {21117, 21119}}
-            require(target in expected[name], "服务发布了部署契约以外的端口")
-            if target in {12346, 21118, 21119}:
+            protocol = port.get("protocol", "tcp")
+            require((target, protocol) in expected_ports[name], "服务发布了部署契约以外的端口或协议")
+            published = str(port.get("published", ""))
+            require(published.isdecimal() and 1 <= int(published) <= 65535, "服务端口必须固定发布到有效宿主端口")
+            actual_ports.append((target, protocol))
+            if target == 12346:
+                address = ipaddress.ip_address(port.get("host_ip", "0.0.0.0"))
+                require(address.is_loopback or any(address in network for network in admin_lan_networks),
+                        "管理端口必须绑定回环或明确的局域网 IPv4 地址")
+            elif target in {21118, 21119}:
                 require(ipaddress.ip_address(port.get("host_ip", "0.0.0.0")).is_loopback,
-                        "管理或 WebSocket 端口必须仅绑定回环地址")
+                        "WebSocket 端口必须仅绑定回环地址")
+        require(len(actual_ports) == len(expected_ports[name]) and set(actual_ports) == expected_ports[name],
+                "正式三容器缺少必需 TCP/UDP 端口或存在重复发布")
         if name != api_name:
             env = service.get("environment", {})
             require(env.get("MUST_LOGIN") == "1" and env.get("API_INTERNAL_SECRET") == secret,
@@ -64,15 +81,23 @@ def verify(config):
         require(len(mounts) == 1 and mounts[0].get("type") == "volume", "server key 必须来自独立持久卷")
         keys.append(mounts[0].get("source"))
     require(keys[0] and len(set(keys)) == 1, "API 与 server 未共享同一 server key 卷")
+    key_volume = config.get("volumes", {}).get(keys[0])
+    require(isinstance(key_volume, dict), "server key 卷必须由当前 Compose 定义")
+    require(not key_volume.get("external") and not key_volume.get("driver_opts")
+            and key_volume.get("driver", "local") == "local",
+            "server key 卷禁止复用外部卷或绑定宿主目录")
 
 
 def verify_data_separation(config, original):
-    """首次切换的新数据必须独立于旧容器挂载，防止原库被原地迁移。"""
+    """首次切换保护旧数据，同时允许已运行的受控容器复检自身目录。"""
     mounts = config["services"]["rustdesk-api-server-pro"].get("volumes", [])
     data = [item for item in mounts if item.get("target") == "/app/data"]
     require(len(data) == 1 and data[0].get("type") == "bind" and data[0].get("source"), "新 API 数据必须来自独立宿主目录")
     candidate = Path(data[0]["source"]).resolve()
     require(candidate != Path(candidate.anchor), "新 API 数据不能使用文件系统根目录")
+    if (original.get("Name") == "/rustdesk-api-server-pro"
+            and "CONTROLLED_API_ONLY=1" in original.get("Config", {}).get("Env", [])):
+        return
     for mount in original.get("Mounts", []):
         if mount.get("Source"):
             source = Path(mount["Source"]).resolve()
@@ -83,10 +108,11 @@ def verify_data_separation(config, original):
 def self_test():
     """覆盖环境覆盖后的公网绑定、错误鉴权和不安全运行模式。"""
     api_name = "rustdesk-api-server-pro"
-    config = {"services": {api_name: {
+    config = {"volumes": {"key": {}}, "services": {api_name: {
         "image": "fixture-api", "environment": {"RUSTDESK_API_INTERNAL_SECRET": "x" * 48,
         "CONTROLLED_API_ONLY": "1", "PORT": "12345", "ADMIN_PORT": "12346", "ADMIN_USER": "fixture", "ADMIN_PASS": "x" * 32},
-        "ports": [{"target": 12346, "host_ip": "127.0.0.1"}],
+        "ports": [{"target": 12346, "host_ip": "127.0.0.1", "published": "12346"},
+                  {"target": 12345, "published": "12345"}],
         "volumes": [{"target": "/app/rustdesk-server", "type": "volume", "source": "key"},
                     {"target": "/app/data", "type": "bind", "source": "/fixture/data"},
                     {"target": "/app/logs", "type": "volume", "source": "logs"}],
@@ -96,10 +122,19 @@ def self_test():
             "image": "fixture-server", "environment": {"MUST_LOGIN": "1", "API_INTERNAL_SECRET": "x" * 48,
             "API_SERVER": "http://rustdesk-api-server-pro:12345"},
             "depends_on": {api_name: {"condition": "service_healthy"}},
-            "ports": [{"target": port, "host_ip": "::1"}],
+            "ports": [{"target": port, "host_ip": "::1", "published": str(port)}],
             "volumes": [{"target": "/data", "type": "volume", "source": "key"}],
         }
+    config["services"]["rustdesk-hbbs"]["ports"].extend([
+        {"target": 21115, "published": "21115"},
+        {"target": 21116, "published": "21116"},
+        {"target": 21116, "protocol": "udp", "published": "21116"},
+    ])
+    config["services"]["rustdesk-hbbr"]["ports"].append({"target": 21117, "published": "21117"})
     verify(config)
+    lan_config = copy.deepcopy(config)
+    lan_config["services"][api_name]["ports"][0]["host_ip"] = "192.168.0.211"
+    verify(lan_config)
     mutations = (
         lambda s: s[api_name]["ports"][0].update(host_ip="0.0.0.0"),
         lambda s: s["rustdesk-hbbs"]["ports"][0].pop("host_ip"),
@@ -116,6 +151,13 @@ def self_test():
         lambda s: s[api_name]["environment"].update(ADMIN_PASS="password"),
         lambda s: s["rustdesk-hbbs"]["volumes"].append({"target": "/var/run/docker.sock", "type": "bind"}),
         lambda s: s[api_name]["volumes"][2].update(type="bind", source="/fixture/original"),
+        lambda s: s["rustdesk-hbbs"]["ports"].pop(),
+        lambda s: s["rustdesk-hbbs"]["ports"][3].update(protocol="tcp"),
+        lambda s: s[api_name]["ports"][0].update(protocol="udp"),
+        lambda s: s["rustdesk-hbbr"]["ports"].append(copy.deepcopy(s["rustdesk-hbbr"]["ports"][0])),
+        lambda s: s[api_name]["ports"][1].pop("published"),
+        lambda s: s[api_name]["ports"][0].update(host_ip="169.254.1.1"),
+        lambda s: s[api_name]["ports"][0].update(host_ip="8.8.8.8"),
     )
     for mutate in mutations:
         invalid = copy.deepcopy(config)
@@ -125,8 +167,41 @@ def self_test():
         except RuntimeError:
             continue
         raise RuntimeError("ERR-2393 危险 Compose 配置未被拒绝")
+    for mutate in (
+        lambda c: c["volumes"].pop("key"),
+        lambda c: c["volumes"]["key"].update(external=True),
+        lambda c: c["volumes"]["key"].update(driver_opts={"type": "none", "o": "bind", "device": "/fixture/old-key"}),
+        lambda c: c["volumes"]["key"].update(driver="other"),
+    ):
+        invalid = copy.deepcopy(config)
+        mutate(invalid)
+        try:
+            verify(invalid)
+        except RuntimeError:
+            continue
+        raise RuntimeError("ERR-2393 外部或宿主绑定 server key 卷未被拒绝")
     original = {"Mounts": [{"Type": "bind", "Source": "/fixture/original"}]}
     verify_data_separation(config, original)
+    current = {"Name": "/rustdesk-api-server-pro", "Config": {"Env": ["CONTROLLED_API_ONLY=1"]},
+               "Mounts": [{"Type": "bind", "Source": "/fixture/data"}]}
+    verify_data_separation(config, current)
+    invalid_root = copy.deepcopy(config)
+    invalid_root["services"][api_name]["volumes"][1]["source"] = "/"
+    try:
+        verify_data_separation(invalid_root, current)
+    except RuntimeError:
+        pass
+    else:
+        raise RuntimeError("ERR-2393 当前受控容器复检绕过了数据根目录保护")
+    for legacy in (
+        {"Name": "/rustdesk-api-server-pro", "Mounts": current["Mounts"]},
+        {**current, "Name": "/rustdesk-api-server-pro-precontrolled"},
+    ):
+        try:
+            verify_data_separation(config, legacy)
+        except RuntimeError:
+            continue
+        raise RuntimeError("ERR-2393 旧容器或保留容器的数据目录重叠未被拒绝")
     for source in ("/fixture/original", "/fixture/original/data", "/fixture", "/"):
         invalid = copy.deepcopy(config)
         invalid["services"][api_name]["volumes"][1]["source"] = source
@@ -135,8 +210,9 @@ def self_test():
         except RuntimeError:
             continue
         raise RuntimeError("ERR-2393 原库目录重叠未被拒绝")
-    print("PASS: 最终配置预检拒绝 " + str(len(mutations)) + " 类不安全覆盖")
+    print("PASS: 最终配置预检拒绝 " + str(len(mutations) + 4) + " 类不安全覆盖")
     print("PASS: 新数据目录相同、子目录、父目录及根目录均被拒绝")
+    print("PASS: 当前受控容器复检不误拒，旧容器与保留容器仍保护数据目录")
 
 
 if __name__ == "__main__":

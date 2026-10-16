@@ -28,16 +28,16 @@ http_post() {
     secret="$2"
     body='{}'
     if [ -n "$secret" ]; then
-        curl -sS -m "${HTTP_TIMEOUT_SECONDS:-5}" -w '\n%{http_code}' \
+        printf 'X-Internal-Secret: %s\n' "$secret" | curl -q --noproxy '*' -sS -m "${HTTP_TIMEOUT_SECONDS:-5}" -w '\n%{http_code}' \
             -H "Content-Type: application/json" \
-            -H "X-Internal-Secret: $secret" \
+            -H @- \
             -d "$body" \
-            "$url"
+            -- "$url"
     else
-        curl -sS -m "${HTTP_TIMEOUT_SECONDS:-5}" -w '\n%{http_code}' \
+        curl -q --noproxy '*' -sS -m "${HTTP_TIMEOUT_SECONDS:-5}" -w '\n%{http_code}' \
             -H "Content-Type: application/json" \
             -d "$body" \
-            "$url"
+            -- "$url"
     fi
 }
 
@@ -72,15 +72,10 @@ check_internal_api_auth() {
     url="$api_base/internal/rustdesk/auth"
 
     if ! have_cmd curl; then
-        warn "未找到 curl，跳过内部准入接口鉴权检查"
+        fail "未找到 curl，无法检查内部准入接口鉴权"
         return
     fi
-    json_parser=""
-    if have_cmd python3 && python3 --version >/dev/null 2>&1; then
-        json_parser="python3"
-    elif have_cmd python && python --version >/dev/null 2>&1; then
-        json_parser="python"
-    else
+    if ! select_python; then
         fail "未找到可执行的 python3/python，无法严格解析内部接口响应"
         return
     fi
@@ -91,7 +86,17 @@ check_internal_api_auth() {
     if [ -n "${RUSTDESK_API_INTERNAL_SECRET:-}" ]; then
         check_internal_response "$url" "$RUSTDESK_API_INTERNAL_SECRET" 200 "ERR-2302" "内部接口正确密钥进入准入逻辑"
     else
-        warn "未设置 RUSTDESK_API_INTERNAL_SECRET，跳过正确密钥路径检查"
+        fail "未设置 RUSTDESK_API_INTERNAL_SECRET，无法检查正确密钥路径"
+    fi
+}
+
+select_python() {
+    if have_cmd python3 && python3 --version >/dev/null 2>&1; then
+        json_parser="python3"
+    elif have_cmd python && python -c 'import sys; sys.exit(sys.version_info[0] < 3)' >/dev/null 2>&1; then
+        json_parser="python"
+    else
+        return 1
     fi
 }
 
@@ -121,6 +126,37 @@ validate_endpoint() {
     fi
 }
 
+probe_tcp() {
+    if ! select_python; then
+        return 2
+    fi
+    "$json_parser" -c '
+import errno, socket, sys
+try:
+    timeout = float(sys.argv[3])
+    if not 0 < timeout <= 30:
+        sys.exit(2)
+    addresses = socket.getaddrinfo(sys.argv[1], int(sys.argv[2]), type=socket.SOCK_STREAM)
+    if not addresses:
+        sys.exit(2)
+    results = []
+    for family, kind, proto, _, address in addresses:
+        try:
+            with socket.socket(family, kind, proto) as connection:
+                connection.settimeout(timeout)
+                result = connection.connect_ex(address)
+        except OSError:
+            results.append(None)
+            continue
+        if result == 0:
+            sys.exit(0)
+        results.append(result)
+    sys.exit(1 if all(result == errno.ECONNREFUSED for result in results) else 2)
+except (OSError, ValueError, OverflowError):
+    sys.exit(2)
+' "$1" "$2" "${PORT_TIMEOUT_SECONDS:-2}" >/dev/null 2>&1
+}
+
 check_port_closed() {
     host="$1"
     port="$2"
@@ -128,23 +164,13 @@ check_port_closed() {
     if ! validate_endpoint "$host" "$port" "$label"; then
         return 0
     fi
-    if have_cmd nc; then
-        if nc -z -w "${PORT_TIMEOUT_SECONDS:-2}" "$host" "$port" >/dev/null 2>&1; then
-            fail "$label 仍可连接：$host:$port"
-        else
-            pass "$label 不可连接：$host:$port"
-        fi
-        return
-    fi
-    if have_cmd timeout && have_cmd bash; then
-        if timeout "${PORT_TIMEOUT_SECONDS:-2}" bash -c 'cat < /dev/null > "/dev/tcp/$1/$2"' sh "$host" "$port" >/dev/null 2>&1; then
-            fail "$label 仍可连接：$host:$port"
-        else
-            pass "$label 不可连接：$host:$port"
-        fi
-        return
-    fi
-    warn "未找到 nc 或 bash /dev/tcp，跳过端口检查：$label $host:$port"
+    status=0
+    probe_tcp "$host" "$port" || status=$?
+    case "$status" in
+        0) fail "$label 仍可连接：$host:$port" ;;
+        1) pass "$label 明确拒绝连接：$host:$port" ;;
+        *) fail "$label 无法确认已关闭（解析失败、超时或网络不可达）：$host:$port" ;;
+    esac
 }
 
 check_port_open() {
@@ -154,15 +180,11 @@ check_port_open() {
     if ! validate_endpoint "$host" "$port" "$label"; then
         return 0
     fi
-    if have_cmd nc; then
-        if nc -z -w "${PORT_TIMEOUT_SECONDS:-2}" "$host" "$port" >/dev/null 2>&1; then
-            pass "$label 可连接：$host:$port"
-        else
-            fail "$label 不可连接：$host:$port"
-        fi
-        return
+    if probe_tcp "$host" "$port"; then
+        pass "$label 可连接：$host:$port"
+    else
+        fail "$label 不可连接或无法确认：$host:$port"
     fi
-    warn "未找到 nc，跳过开放端口检查：$label $host:$port"
 }
 
 check_public_exposure() {
@@ -179,6 +201,7 @@ check_public_exposure() {
     check_port_closed "$public_host" "${FNOS_ADMIN_HTTP_PORT:-12346}" "管理后台公网端口"
     check_port_closed "$public_host" "${RUSTDESK_HBBS_WEB_PORT:-21118}" "hbbs Web 公网端口"
     check_port_closed "$public_host" "${RUSTDESK_HBBR_WEB_PORT:-21119}" "hbbr Web 公网端口"
+    warn "公网 hbbs 21116/UDP 未经 TCP 探针验证，需从独立网络做协议级检查"
 }
 
 check_old_service_shutdown() {
@@ -191,6 +214,7 @@ check_old_service_shutdown() {
     check_port_closed "$old_host" "${OLD_RUSTDESK_HBBS_21115:-21115}" "旧裸 hbbs 21115"
     check_port_closed "$old_host" "${OLD_RUSTDESK_HBBS_21116:-21116}" "旧裸 hbbs 21116"
     check_port_closed "$old_host" "${OLD_RUSTDESK_HBBR_21117:-21117}" "旧裸 hbbr 21117"
+    warn "旧裸 hbbs 21116/UDP 未经 TCP 探针验证，需从独立网络做协议级检查"
 }
 
 check_internal_api_auth
@@ -202,4 +226,8 @@ if [ "$failures" -gt 0 ]; then
     exit 1
 fi
 
-printf '\n受控部署安全检查通过：%s 项警告。\n' "$warnings"
+if [ "$warnings" -gt 0 ]; then
+    printf '\n受控部署安全检查部分完成：%s 项未验证警告。\n' "$warnings"
+else
+    printf '\n受控部署安全检查通过。\n'
+fi

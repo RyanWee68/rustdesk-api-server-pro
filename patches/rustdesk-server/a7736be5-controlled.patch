@@ -718,7 +718,7 @@ index de1a7ea..f9513bb 100644
  }
  
 diff --git a/src/rendezvous_server.rs b/src/rendezvous_server.rs
-index eaf7190..108e0e9 100644
+index eaf7190..33d6dbc 100644
 --- a/src/rendezvous_server.rs
 +++ b/src/rendezvous_server.rs
 @@ -1,4 +1,5 @@
@@ -754,15 +754,49 @@ index eaf7190..108e0e9 100644
      Ws(WsSink),
  }
  type Sender = mpsc::UnboundedSender<Data>;
-@@ -81,6 +82,7 @@ struct Inner {
+@@ -59,8 +60,31 @@ type Receiver = mpsc::UnboundedReceiver<Data>;
+ static ROTATION_RELAY_SERVER: AtomicUsize = AtomicUsize::new(0);
+ type RelayServers = Vec<String>;
+ const CHECK_RELAY_TIMEOUT: u64 = 3_000;
++const PENDING_RELAY_GRANT_TIMEOUT: u64 = 30;
+ static ALWAYS_USE_RELAY: AtomicBool = AtomicBool::new(false);
+ 
++#[derive(Clone)]
++struct PendingRelayGrant {
++    created_at: Instant,
++    target_id: String,
++    access_token: String,
++    source_ip: String,
++    target_ip: String,
++}
++
++fn take_verified_pending_relay_grant(
++    pending: &mut HashMap<SocketAddr, PendingRelayGrant>,
++    source_addr: SocketAddr,
++    target_addr: SocketAddr,
++    target_id: &str,
++) -> Option<PendingRelayGrant> {
++    let grant = pending.remove(&try_into_v4(source_addr))?;
++    (grant.created_at.elapsed().as_secs() < PENDING_RELAY_GRANT_TIMEOUT
++        && grant.target_id == target_id
++        && grant.target_ip == target_addr.ip().to_string())
++    .then_some(grant)
++}
++
+ // Store punch hole requests
+ use once_cell::sync::Lazy;
+ use tokio::sync::Mutex as TokioMutex; // differentiate if needed
+@@ -81,7 +105,9 @@ struct Inner {
  
  #[derive(Clone)]
  pub struct RendezvousServer {
 +    admission: Arc<ControlledAdmissionClient>,
      tcp_punch: Arc<Mutex<HashMap<SocketAddr, Sink>>>,
++    pending_relay_grants: Arc<Mutex<HashMap<SocketAddr, PendingRelayGrant>>>,
      pm: PeerMap,
      tx: Sender,
-@@ -111,7 +113,15 @@ impl RendezvousServer {
+     relay_servers: Arc<RelayServers>,
+@@ -111,7 +137,15 @@ impl RendezvousServer {
          key: &str,
          rmem: usize,
      ) -> ResultType<()> {
@@ -778,15 +812,17 @@ index eaf7190..108e0e9 100644
          let nat_port = port - 1;
          let ws_port = port + 2;
          let pm = PeerMap::new().await?;
-@@ -136,6 +146,7 @@ impl RendezvousServer {
+@@ -136,7 +170,9 @@ impl RendezvousServer {
              )
          };
          let mut rs = Self {
 +            admission,
              tcp_punch: Arc::new(Mutex::new(HashMap::new())),
++            pending_relay_grants: Arc::new(Mutex::new(HashMap::new())),
              pm,
              tx: tx.clone(),
-@@ -353,10 +364,14 @@ impl RendezvousServer {
+             relay_servers: Default::default(),
+@@ -353,10 +389,14 @@ impl RendezvousServer {
          if let Ok(msg_in) = RendezvousMessage::parse_from_bytes(bytes) {
              match msg_in.union {
                  Some(rendezvous_message::Union::RegisterPeer(rp)) => {
@@ -804,7 +840,7 @@ index eaf7190..108e0e9 100644
                          if self.inner.serial > rp.serial {
                              let mut msg_out = RendezvousMessage::new();
                              msg_out.set_configure_update(ConfigUpdate {
-@@ -379,6 +394,24 @@ impl RendezvousServer {
+@@ -379,6 +419,24 @@ impl RendezvousServer {
                      } else if !self.check_ip_blocker(&ip, &id).await {
                          return send_rk_res(socket, addr, TOO_FREQUENT).await;
                      }
@@ -829,7 +865,7 @@ index eaf7190..108e0e9 100644
                      let peer = self.pm.get_or(&id).await;
                      let (changed, ip_changed) = {
                          let peer = peer.read().await;
-@@ -445,6 +478,8 @@ impl RendezvousServer {
+@@ -445,6 +503,8 @@ impl RendezvousServer {
                      }
                      if changed {
                          self.pm.update_pk(id, peer, addr, rk.uuid, rk.pk, ip).await;
@@ -838,7 +874,7 @@ index eaf7190..108e0e9 100644
                      }
                      let mut msg_out = RendezvousMessage::new();
                      msg_out.set_register_pk_response(RegisterPkResponse {
-@@ -508,10 +543,23 @@ impl RendezvousServer {
+@@ -508,10 +568,39 @@ impl RendezvousServer {
          addr: SocketAddr,
          key: &str,
          ws: bool,
@@ -859,10 +895,26 @@ index eaf7190..108e0e9 100644
 +                        log::warn!("连接被拒绝：{}", admission.code.as_deref().unwrap_or("ERR-239B"));
 +                        return true;
 +                    }
++                    if !ph.force_relay {
++                        if let Some(peer) = self.pm.get_in_memory(&ph.id).await {
++                            let peer_addr = peer.read().await.socket_addr;
++                            let mut pending = self.pending_relay_grants.lock().await;
++                            pending.retain(|_, grant| {
++                                grant.created_at.elapsed().as_secs() < PENDING_RELAY_GRANT_TIMEOUT
++                            });
++                            pending.insert(try_into_v4(addr), PendingRelayGrant {
++                                created_at: Instant::now(),
++                                target_id: ph.id.clone(),
++                                access_token: ph.token.clone(),
++                                source_ip: addr.ip().to_string(),
++                                target_ip: peer_addr.ip().to_string(),
++                            });
++                        }
++                    }
                      // there maybe several attempt, so sink can be none
                      if let Some(sink) = sink.take() {
                          self.tcp_punch.lock().await.insert(try_into_v4(addr), sink);
-@@ -520,15 +568,28 @@ impl RendezvousServer {
+@@ -520,15 +609,28 @@ impl RendezvousServer {
                      return true;
                  }
                  Some(rendezvous_message::Union::RequestRelay(mut rf)) => {
@@ -896,7 +948,36 @@ index eaf7190..108e0e9 100644
                          self.tx.send(Data::Msg(msg_out.into(), peer_addr)).ok();
                      }
                      return true;
-@@ -589,6 +650,15 @@ impl RendezvousServer {
+@@ -537,6 +639,28 @@ impl RendezvousServer {
+                     let addr_b = AddrMangle::decode(&rr.socket_addr);
+                     rr.socket_addr = Default::default();
+                     let id = rr.id();
++                    if !rr.uuid.is_empty() && !rr.relay_server.is_empty() {
++                        let mut pending = self.pending_relay_grants.lock().await;
++                        let context = take_verified_pending_relay_grant(
++                            &mut pending, addr_b, addr, id,
++                        );
++                        drop(pending);
++                        let Some(context) = context else {
++                            log::warn!("ERR-239D 自动中继缺少匹配的已认证打洞上下文");
++                            return false;
++                        };
++                        let result = self.admission.issue_relay_grant(&RelayGrantIssueRequest {
++                            target_id: context.target_id,
++                            access_token: context.access_token,
++                            session_uuid: rr.uuid.clone(),
++                            source_ip: context.source_ip,
++                            target_ip: context.target_ip,
++                        }).await;
++                        if !result.allow {
++                            log::warn!("中继签发被拒绝：{}", result.code.as_deref().unwrap_or("ERR-239B"));
++                            return false;
++                        }
++                    }
+                     if !id.is_empty() {
+                         let pk = self.get_pk(&rr.version, id.to_owned()).await;
+                         rr.set_pk(pk);
+@@ -589,6 +713,15 @@ impl RendezvousServer {
          false
      }
  
@@ -912,7 +993,7 @@ index eaf7190..108e0e9 100644
      #[inline]
      async fn update_addr(
          &mut self,
-@@ -737,6 +807,37 @@ impl RendezvousServer {
+@@ -737,6 +870,37 @@ impl RendezvousServer {
                  return Ok((msg_out, None));
              }
              
@@ -950,7 +1031,7 @@ index eaf7190..108e0e9 100644
              // record punch hole request (from addr -> peer id/peer_addr)
              {
                  let from_ip = try_into_v4(addr).ip().to_string();
-@@ -852,7 +953,11 @@ impl RendezvousServer {
+@@ -852,7 +1016,11 @@ impl RendezvousServer {
          if let Some(sink) = sink.as_mut() {
              if let Ok(bytes) = msg.write_to_bytes() {
                  match sink {
@@ -963,7 +1044,7 @@ index eaf7190..108e0e9 100644
                          allow_err!(s.send(Bytes::from(bytes)).await);
                      }
                      Sink::Ws(ws) => {
-@@ -1169,39 +1274,41 @@ impl RendezvousServer {
+@@ -1169,39 +1337,41 @@ impl RendezvousServer {
          });
      }
  
@@ -1028,7 +1109,7 @@ index eaf7190..108e0e9 100644
                  Ok(response)
              };
              let ws_stream = tokio_tungstenite::accept_hdr_async(stream, callback).await?;
-@@ -1209,16 +1316,41 @@ impl RendezvousServer {
+@@ -1209,16 +1379,41 @@ impl RendezvousServer {
              sink = Some(Sink::Ws(a));
              while let Ok(Some(Ok(msg))) = timeout(30_000, b.next()).await {
                  if let tungstenite::Message::Binary(bytes) = msg {
@@ -1075,7 +1156,7 @@ index eaf7190..108e0e9 100644
                      break;
                  }
              }
-@@ -1277,9 +1409,6 @@ impl RendezvousServer {
+@@ -1277,9 +1472,6 @@ impl RendezvousServer {
              }
          }
  
@@ -1085,7 +1166,7 @@ index eaf7190..108e0e9 100644
          (key, out_sk)
      }
  
-@@ -1412,6 +1541,89 @@ async fn create_tcp_listener(bind_addr: Option<IpAddr>, port: i32) -> ResultType
+@@ -1412,6 +1604,107 @@ async fn create_tcp_listener(bind_addr: Option<IpAddr>, port: i32) -> ResultType
  mod tests {
      use super::*;
  
@@ -1170,6 +1251,24 @@ index eaf7190..108e0e9 100644
 +        let mut health = RendezvousMessage::new();
 +        health.set_hc(HealthCheck { token: "test-token".into(), ..Default::default() });
 +        assert!(RendezvousServer::has_plaintext_token(&health));
++    }
++
++    #[test]
++    fn automatic_relay_requires_matching_pending_context() {
++        let source: SocketAddr = "192.0.2.10:40000".parse().unwrap();
++        let target: SocketAddr = "198.51.100.20:50000".parse().unwrap();
++        let grant = || PendingRelayGrant {
++            created_at: Instant::now(),
++            target_id: "target".into(),
++            access_token: "token".into(),
++            source_ip: source.ip().to_string(),
++            target_ip: target.ip().to_string(),
++        };
++        let mut pending = HashMap::from([(source, grant())]);
++        assert!(take_verified_pending_relay_grant(&mut pending, source, target, "target").is_some());
++        pending.insert(source, grant());
++        assert!(take_verified_pending_relay_grant(&mut pending, source, target, "other").is_none());
++        assert!(pending.is_empty());
 +    }
 +
      #[hbb_common::tokio::test]

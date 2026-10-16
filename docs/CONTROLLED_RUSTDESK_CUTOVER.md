@@ -1,6 +1,6 @@
 # 受控 RustDesk 正式切换与回滚
 
-更新时间：2026-10-13。已完成授权主机局域网正式端口切换、原容器真实回滚及再次切换；旧容器删除后又从离线材料完成隔离重建和 API 健康验证。下面保留原操作清单；公网发布和完整官方客户端验收尚未完成。
+更新时间：2026-10-16。已完成授权主机局域网正式端口切换、原容器真实回滚及再次切换；旧容器删除后又从离线材料完成隔离重建和 API 健康验证。三容器宿主端口已迁移到 22xxx，公网 API/管理页及 RustDesk 原生 TCP 端口可达；官方 1.4.9 跨网络普通连接自动中继已通过。独立公网端口扫描、UDP、正常 WSS 和共享出口角色证明仍未完成。
 
 ## 本次切换结果
 
@@ -13,9 +13,9 @@
 7. 新公钥写入 API 配置并重启 API 后健康通过，server 密钥及卷不变。2026-10-13 已确认历史隔离资源与正式挂载分离，并清理四个历史测试容器、六个测试卷和一个测试网络；2026-10-14 又清理三只无容器引用的旧局域网 PoC data/key/log 卷，并复核正式部署文件、API 配置与正式 key 卷公钥一致。正式三容器及正式数据、key、日志均保留。
 8. 成功后取消本次自动回滚定时器。主机私有部署目录保留 `cutover.py`、`runtime.env`、`cutover-report.json` 和 `server-public-key.txt`；操作脚本的三个回滚时序与名称冲突保护自检通过。需要回滚时，在主机使用私有部署目录中的脚本执行 `python3 cutover.py rollback`；先暂停新管理写入并保留新库，脚本不合并切换后的数据。
 
-当前容器为 `rustdesk-api-server-pro`、`rustdesk-hbbs-controlled`、`rustdesk-hbbr-controlled`；旧容器 `rustdesk-api-server-pro-precontrolled` 已删除。API、管理和原生 server 端口仅绑定主机局域网 IP，WebSocket 端口仅回环；不配置公网转发。
+当前容器为 `rustdesk-api-server-pro`、`rustdesk-hbbs-controlled`、`rustdesk-hbbr-controlled`；旧容器 `rustdesk-api-server-pro-precontrolled` 已删除。API `192.168.0.211:22345/TCP`、管理页 `:22346/TCP`、hbbs `:22115/TCP` 与 `:22116/TCP+UDP`、hbbr `:22117/TCP` 仅绑定主机局域网 IP，WebSocket `127.0.0.1:22118/22119/TCP` 仅回环；容器内端口不变。`hbbs` 对外宣告公网中继 `171.217.92.118:22117`，并通过 `MASK=192.168.0.0/16`、`LOCAL_IP=192.168.0.211:22117` 向内网客户端返回局域网中继。原宿主端口已关闭，路由器已转发 22xxx 端口；仍需从独立环境完成 UDP 与未开放端口扫描。
 
-局域网 API 与管理页均 HTTP 200，内部鉴权无密钥 HTTP 401；三次未签发中继连接均关闭且对应 `ERR-2315`。当前 API/管理端口分别绑定 `192.168.0.211:12345/12346`，尚未挂接公网；LAN HTTP 仍有凭据传输风险。公网扫描、正常 WebSocket、官方客户端全矩阵和真实外部认证仍待验收，不能因端口切换成功而认为全部生产验收已通过。
+迁移后 API `/api/health` 与管理页均可用，三容器 healthy；2026-10-16 13:39，官方 1.4.9 从内部端 `192.168.21.23` 普通连接外部端 `171.213.15.205` 成功，`hbbr` 记录同一 UUID 双端配对。server 当前固定为本地镜像 `sha256:45505751dd4205e12bec7baa34cc826939f73789335935281fbc9647c4563fa9`，API、数据库、公钥与端口未因本次更新改变。LAN/公网 HTTP 仍有凭据传输风险；正常 WSS、独立公网扫描、共享出口角色和真实外部认证仍待验收，不能因本次跨网络连接成功而认为全部生产验收已通过。
 
 ## 已核对的现状
 
@@ -33,7 +33,7 @@
 3. 在私有部署配置中明确 `SOURCE_APP_DIR`、`SOURCE_KEY_DIR`、`CONTROLLED_DEPLOY_DIR`、`BACKUP_DIR`、`PRIVATE_ENV`。这些目录必须彼此分离；新 `data` 不得指向原应用目录。
 4. 准备管理员凭据、独立内部 API 密钥、新 server key 及客户端配置。旧库迁移后设备仍须审批，用户远控/中继策略须逐项核对，不能批量自动审批。
 5. 核对客户端 Relay 地址；如需 hbbs 宣告中继地址，在私有 Compose 覆盖中为 hbbs 设置 `-r <客户端可达地址>:21117`。
-6. 已准备不可变镜像 ID 的离线候选包，见 `CONTROLLED_RUSTDESK_OFFLINE_RELEASE.md`；正式使用前核对全部文件摘要，并在独立部署目录运行 `controlled-compose-preflight.py`，检查实际端口覆盖与原数据目录隔离。原数据保护只识别原容器名和 `-precontrolled` 保留名，不能代替完整路径审阅、停机备份及正式端口占用检查。
+6. 已准备不可变镜像 ID 的离线候选包，见 `CONTROLLED_RUSTDESK_OFFLINE_RELEASE.md`；正式使用前核对全部文件摘要，并在独立部署目录运行 `controlled-compose-preflight.py`，检查实际端口覆盖、原数据目录隔离和 key 卷定义。预检现区分当前受控 API 容器与旧容器，允许现用容器复检自身目录，旧容器或 `-precontrolled` 保留容器仍须与新数据分离；key 卷检查拒绝外部卷、宿主绑定和非本地驱动。26 类危险覆盖 Linux 自测及 0.211 当前正式 Compose 预检均已通过；静态检查仍不能证明同名 Docker 卷是全新生成的，须另外核对卷来源、公钥和轮换记录。原数据保护只识别上述容器名，不能代替完整路径审阅、停机备份及正式端口占用检查。
 
 ## 数据迁移演练
 

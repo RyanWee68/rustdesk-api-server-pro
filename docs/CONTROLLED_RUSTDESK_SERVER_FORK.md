@@ -1,8 +1,8 @@
 # RustDesk Server 受控改造基线与任务清单
 
-更新时间：2026-10-14
+更新时间：2026-10-16
 
-当前已固定官方基线并形成可重放补丁：`patches/rustdesk-server/`。独立本地维护仓库为 `D:/WorkSpace/Other/RustDeskServerControlled`，分支 `codex/controlled-admission`；私有远程 fork 为 `RyanWee68/rustdesk-server-controlled`，官方仓库保留为 `upstream`。显式强制中继修复提交 `41e846fcb4e345084bc84af4263a9bb1f5def1e1` 已推送，[维护 CI 运行 38346988802](https://github.com/RyanWee68/rustdesk-server-controlled/actions/runs/38346988802) 通过固定子模块核对、Linux `hbbs/hbbr` 编译和 16 项库回归。加密握手、收发及强制中继修复已有 Linux release 镜像、隔离协议验收和官方客户端三次强制中继成功证据；以下清单继续作为维护要求，完整客户端负向、共享出口角色证明、WSS 与跨网络防绕过验收仍未完成。
+当前已固定官方基线并形成可重放补丁：`patches/rustdesk-server/`。独立本地维护仓库为 `D:/WorkSpace/Other/RustDeskServerControlled`，分支 `codex/controlled-admission`；私有远程 fork 为 `RyanWee68/rustdesk-server-controlled`，官方仓库保留为 `upstream`。显式强制中继修复提交 `41e846fcb4e345084bc84af4263a9bb1f5def1e1` 已通过维护 CI；普通连接自动中继修复提交 `8996bd5` 已推送到用户 fork，Linux release 构建和 17 项库回归通过，0.211 上官方 1.4.9 跨网络普通连接实测成功。以下清单继续作为维护要求，共享出口角色证明、正常 WSS、任意代理换出口与独立公网防绕过验收仍未完成。
 
 ## 选型结论
 
@@ -100,7 +100,7 @@ docs/CONTROLLED_RUSTDESK_FORK_BOOTSTRAP.md
 
 ## hbbr 改造点
 
-固定基线补丁使用 hbbs 签发和 hbbr 双端核销：hbbs 在 `RequestRelay` 收到控制端 token 后调用 `/internal/rustdesk/relay/grant/issue`；hbbr 对每端实际连接 IP 调用 `/internal/rustdesk/relay/grant/consume`。API 失败、会话过期、重复核销或策略撤销时拒绝；当前 API 还在签发及核销阶段拒绝同 IP 双端，直到具备独立设备角色证明。原 `/relay/check` 保留用于设备本身持 token 的内部调用，不直接适配官方 hbbr 请求。
+固定基线补丁使用 hbbs 签发和 hbbr 双端核销：显式中继在 `RequestRelay` 收到控制端 token 后签发；普通连接直连失败后的自动中继只接受 30 秒内与原发起端 socket、目标 ID 和目标实际 IP 匹配的 RelayResponse，再使用其 UUID 签发。hbbr 对每端实际连接 IP 调用 `/internal/rustdesk/relay/grant/consume`。API 失败、上下文缺失、会话过期、重复核销或策略撤销时拒绝；当前 API 还在签发及核销阶段拒绝同 IP 双端，直到具备独立设备角色证明。原 `/relay/check` 保留用于设备本身持 token 的内部调用，不直接适配官方 hbbr 请求。
 
 ## 授权缓存要求
 

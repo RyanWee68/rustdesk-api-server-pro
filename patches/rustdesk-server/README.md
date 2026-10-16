@@ -20,6 +20,8 @@ scripts/deploy/controlled-fork-apply.sh /path/to/rustdesk-server
 `6a2be11f2a4332c9ee8ec23d1d0720fba4cc5002` 的远程 CI 已通过。
 2026-10-13 显式强制中继修复已作为 `41e846f` 推送；远程维护 CI
 运行 `38346988802` 已完成并通过固定子模块核对、Linux 双二进制编译和 16 项库回归。
+2026-10-16 普通连接自动中继修复已作为 `8996bd5` 推送到用户 fork；固定补丁的
+Linux release 构建、动态库检查和 17 项库回归通过，0.211 官方 1.4.9 跨网络普通连接实测成功。
 镜像构建仍从固定官方基线应用本目录补丁。
 
 改造后的行为：
@@ -30,6 +32,7 @@ scripts/deploy/controlled-fork-apply.sh /path/to/rustdesk-server
 - TCP/WebSocket 连接检查控制端 token 和被控端策略；
 - hbbs 为中继请求签发 30 秒双端授权，hbbr 对双方实际 IP 分别在线核销；
 - 显式强制中继在初始 PunchHoleRequest 路径先签发，再用同一 UUID 通知双端；
+- 普通连接直连失败后，自动中继只使用与已认证打洞上下文匹配的目标 RelayResponse UUID 签发；
 - API 请求失败时新连接和新中继默认拒绝，不使用允许结果缓存；
 - `RUSTDESK_KEY_DIR` 指定 server key 的工作目录。
 - 在未建立可信代理身份前，hbbs/hbbr 的 WebSocket 入口忽略客户端自带的转发来源头，仅使用 TCP 对端地址。
@@ -37,9 +40,9 @@ scripts/deploy/controlled-fork-apply.sh /path/to/rustdesk-server
 Windows Rust 1.99.0 的 `cargo check --bins`、Linux release 镜像构建与隔离运行已通过。
 2026-10-10 已审批的官方 1.4.9 客户端单次远控成功；2026-10-12 隔离三容器中，
 真实 hbbs 签发未过期双 IP 授权、hbbr 双端核销和重放拒绝通过，加密连接策略拒绝
-及 API 停止时默认拒绝通过。尚未完成官方客户端完整负向、NAT/代理换出口、
-WebSocket 正常连接及正式环境验收；局域网正式端口已切换并有重复正向实测。
-新增显式强制中继修复仍需更新后的官方客户端实测。中继授权绑定实际观察到的 IP；相同出口 IP
+及 API 停止时默认拒绝通过。官方客户端负向主要矩阵、普通连接自动中继及显式强制中继
+均已有实机证据；仍未完成任意 NAT/代理换出口、WebSocket 正常连接及全部公网安全验收。
+中继授权绑定实际观察到的 IP；相同出口 IP
 的合法双端当前被 API 拒绝，需独立角色证明后才能恢复支持。
 
 上线阻断项：UDP 注册拒绝已有隔离探针，但 UDP 连接入口仍需逐路径审计；

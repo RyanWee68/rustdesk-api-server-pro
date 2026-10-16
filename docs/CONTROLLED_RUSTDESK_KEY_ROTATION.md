@@ -134,15 +134,18 @@ scripts/deploy/controlled-key-rotation.sh generate-internal-secret
 scripts/deploy/controlled-key-rotation.sh rotate-sign-key ./server.yaml
 ```
 
-脚本会先备份原文件，再替换顶层 `signKey`。轮换后需要重启 API，并重新登录管理后台。
+脚本会先生成唯一备份并将权限限制为 `0600`，在配置文件同目录写好候选文件后再替换顶层 `signKey`；连续轮换不会覆盖上一份备份，符号链接配置文件会被拒绝。连续轮换、备份权限、字段保留和符号链接拒绝的 Linux 自测已通过。轮换后需要重启 API，并重新登录管理后台。
 
 ### 重置 RustDesk server key 目录
 
 ```bash
+export CONTROLLED_KEY_ALLOWED_ROOT="$(pwd -P)"
+export CONTROLLED_KEY_BACKUP_DIR="$CONTROLLED_KEY_ALLOWED_ROOT/key-backups"
+install -d -m 0700 "$CONTROLLED_KEY_BACKUP_DIR"
 scripts/deploy/controlled-key-rotation.sh reset-server-key-dir ./rustdesk-server-key --force
 ```
 
-该操作会先备份目录内容，再清空 key 目录。脚本要求显式传入 `--force`，并会拒绝清空 `/`、`/app`、`/data`、`/var` 等高风险目录。执行后必须重启受控 `hbbs/hbbr`，并确认新 key 与旧裸服务 key 不一致。
+先核对当前工作目录确为独立部署目录、目标是其直接子目录，且备份目录与目标分离。脚本要求同时设置 `CONTROLLED_KEY_ALLOWED_ROOT` 和显式传入 `--force`；符号链接目标、根目录及高风险目录会被拒绝。备份采用独立目录并核对内容后才清空原 key 目录。缺少允许目录、符号链接、嵌套备份及成功备份/清空的 Linux 自测已通过；未对现用 key 卷执行本操作。操作后必须重启受控 `hbbs/hbbr`，并确认新 key 与旧裸服务 key 不一致。
 
 ## 回滚注意事项
 
@@ -184,6 +187,8 @@ scripts/deploy/controlled-security-check.sh
 - 内部准入接口无密钥时返回 `ERR-2301`；
 - 内部准入接口错误密钥时返回 `ERR-2301`；
 - 内部准入接口正确密钥时可以进入准入逻辑；
-- 受控 `21115/21116/21117` 端口可连通；
+- 受控 `21115/21116/21117` TCP 端口可连通；
 - 管理后台端口和 `21118/21119` Web 端口不对公网开放；
-- 旧裸 `21115/21116/21117` 端口不可连通。
+- 旧裸 `21115/21116/21117` TCP 端口明确拒绝连接。
+
+端口探测直连目标，不通过 HTTP 代理；解析失败、超时或网络不可达不能记为端口关闭。缺少公网或旧服务地址时，脚本仅报告部分完成。`21116/UDP` 不属于 TCP 探针的验证范围，新旧服务的 UDP 入口均须从独立网络进行协议级检查；即使脚本退出 0 且仅剩 UDP 警告，也不能将阶段 7 公网验收记为全部通过。

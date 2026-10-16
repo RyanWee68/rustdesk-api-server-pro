@@ -66,9 +66,20 @@ pass "内部 API 密钥生成"
 SERVER_YAML="$WORK_DIR/server.yaml"
 printf 'signKey: "example-sign-key"\ndebugMode: false\n' > "$SERVER_YAML"
 sh "$ROOT_DIR/scripts/deploy/controlled-key-rotation.sh" rotate-sign-key "$SERVER_YAML" >/dev/null
+sh "$ROOT_DIR/scripts/deploy/controlled-key-rotation.sh" rotate-sign-key "$SERVER_YAML" >/dev/null
 grep -q '^signKey: "example-sign-key"$' "$SERVER_YAML" && fail "API signKey 未完成轮换"
-find "$WORK_DIR" -maxdepth 1 -type f -name 'server.yaml.bak.*' | grep -q . || fail "API signKey 轮换未生成备份"
-pass "API signKey 轮换和备份"
+grep -q '^debugMode: false$' "$SERVER_YAML" || fail "signKey 轮换破坏了其他 YAML 字段"
+[ "$(find "$WORK_DIR" -maxdepth 1 -type f -name 'server.yaml.bak.*' | wc -l)" -eq 2 ] || fail "连续 signKey 轮换未保留两份独立备份"
+if find "$WORK_DIR" -maxdepth 1 -type f -name 'server.yaml.bak.*' -exec stat -c %a {} \; | grep -vq '^600$'; then
+    fail "signKey 备份权限不是 0600"
+fi
+[ -z "$(find "$WORK_DIR" -maxdepth 1 -type f -name 'server.yaml.tmp.*' -print -quit)" ] || fail "signKey 轮换留下临时配置文件"
+ln -s "$SERVER_YAML" "$WORK_DIR/server-link.yaml"
+if sh "$ROOT_DIR/scripts/deploy/controlled-key-rotation.sh" rotate-sign-key "$WORK_DIR/server-link.yaml" >"$WORK_DIR/signkey-link.log" 2>&1; then
+    fail "signKey 轮换未拒绝符号链接配置文件"
+fi
+grep -q 'ERR-2395.*符号链接' "$WORK_DIR/signkey-link.log" || fail "符号链接配置文件未明确拒绝"
+pass "API signKey 连续轮换、独立备份和权限"
 
 KEY_DIR="$WORK_DIR/server-key"
 BACKUP_DIR="$WORK_DIR/key-backups"
@@ -79,6 +90,29 @@ if CONTROLLED_KEY_BACKUP_DIR="$BACKUP_DIR" \
     fail "server key 清理未要求 --force"
 fi
 grep -q 'ERR-2395' "$WORK_DIR/no-force.log" || fail "server key 拒绝路径缺少 ERR-2395"
+
+if CONTROLLED_KEY_BACKUP_DIR="$BACKUP_DIR" \
+    sh "$ROOT_DIR/scripts/deploy/controlled-key-rotation.sh" reset-server-key-dir "$KEY_DIR" --force >"$WORK_DIR/no-root.log" 2>&1; then
+    fail "server key 清理未要求显式允许目录"
+fi
+grep -q 'ERR-2395.*CONTROLLED_KEY_ALLOWED_ROOT' "$WORK_DIR/no-root.log" || fail "缺少允许目录未明确拒绝"
+[ -f "$KEY_DIR/id_ed25519.pub" ] || fail "缺少允许目录时修改了 key 文件"
+
+ln -s "$KEY_DIR" "$WORK_DIR/server-key-link"
+if CONTROLLED_KEY_ALLOWED_ROOT="$WORK_DIR" CONTROLLED_KEY_BACKUP_DIR="$BACKUP_DIR" \
+    sh "$ROOT_DIR/scripts/deploy/controlled-key-rotation.sh" reset-server-key-dir "$WORK_DIR/server-key-link" --force >"$WORK_DIR/key-link.log" 2>&1; then
+    fail "server key 清理未拒绝符号链接目标"
+fi
+grep -q 'ERR-2395.*符号链接' "$WORK_DIR/key-link.log" || fail "符号链接目标未明确拒绝"
+[ -f "$KEY_DIR/id_ed25519.pub" ] || fail "符号链接被拒绝后修改了 key 文件"
+
+mkdir -p "$KEY_DIR/nested-backup"
+if CONTROLLED_KEY_ALLOWED_ROOT="$WORK_DIR" CONTROLLED_KEY_BACKUP_DIR="$KEY_DIR/nested-backup" \
+    sh "$ROOT_DIR/scripts/deploy/controlled-key-rotation.sh" reset-server-key-dir "$KEY_DIR" --force >"$WORK_DIR/nested-backup.log" 2>&1; then
+    fail "server key 清理未拒绝嵌套备份目录"
+fi
+grep -q 'ERR-2395.*备份目录不能位于' "$WORK_DIR/nested-backup.log" || fail "嵌套备份目录未明确拒绝"
+[ -f "$KEY_DIR/id_ed25519.pub" ] || fail "嵌套备份被拒绝后修改了 key 文件"
 
 CONTROLLED_KEY_ALLOWED_ROOT="$WORK_DIR" CONTROLLED_KEY_BACKUP_DIR="$BACKUP_DIR" \
     sh "$ROOT_DIR/scripts/deploy/controlled-key-rotation.sh" reset-server-key-dir "$KEY_DIR" --force >/dev/null
@@ -111,18 +145,33 @@ cat > "$FAKE_BIN/curl" <<'EOF'
 #!/bin/sh
 secret=""
 url=""
+noproxy=0
+[ "$1" = "-q" ] || exit 1
 while [ "$#" -gt 0 ]; do
     case "$1" in
+        --noproxy)
+            shift
+            [ "$1" = "*" ] || exit 1
+            noproxy=1
+            ;;
         -H)
             shift
             case "$1" in
-                "X-Internal-Secret: "*) secret="${1#X-Internal-Secret: }" ;;
+                @-)
+                    IFS= read -r header || exit 1
+                    case "$header" in
+                        "X-Internal-Secret: "*) secret="${header#X-Internal-Secret: }" ;;
+                        *) exit 1 ;;
+                    esac
+                    ;;
+                "X-Internal-Secret: "*) exit 1 ;;
             esac
             ;;
         http://*|https://*) url="$1" ;;
     esac
     shift
 done
+[ "$noproxy" -eq 1 ] || exit 1
 printf '%s\n' "$url" >> "$MOCK_CURL_LOG"
 case "$secret" in
     ""|wrong-internal-secret-for-security-check)
@@ -146,6 +195,14 @@ MOCK_CURL_LOG="$WORK_DIR/curl.log" PATH="$FAKE_BIN:$PATH" \
     sh "$ROOT_DIR/scripts/deploy/controlled-security-check.sh" >"$WORK_DIR/security-good.log" 2>&1
 grep -q '/internal/rustdesk/auth$' "$WORK_DIR/curl.log" || fail "安全检查未调用无副作用鉴权端点"
 grep -q '/device/register' "$WORK_DIR/curl.log" && fail "安全检查仍调用会写入设备的注册端点"
+grep -q '安全检查部分完成' "$WORK_DIR/security-good.log" || fail "缺少公网与旧地址时不得报告全部检查通过"
+
+if MOCK_CURL_LOG="$WORK_DIR/curl-no-secret.log" PATH="$FAKE_BIN:$PATH" \
+    API_BASE_URL="http://api.test" RUSTDESK_API_INTERNAL_SECRET="" \
+    sh "$ROOT_DIR/scripts/deploy/controlled-security-check.sh" >"$WORK_DIR/security-no-secret.log" 2>&1; then
+    fail "缺少内部密钥时安全检查不应通过"
+fi
+grep -q 'ERR-2394.*未设置 RUSTDESK_API_INTERNAL_SECRET' "$WORK_DIR/security-no-secret.log" || fail "缺少内部密钥未明确报告失败"
 
 if MOCK_CURL_LOG="$WORK_DIR/curl-http500.log" MOCK_CORRECT_MODE=http500 PATH="$FAKE_BIN:$PATH" \
     API_BASE_URL="http://api.test" RUSTDESK_API_INTERNAL_SECRET="fixture-secret" \
@@ -186,6 +243,25 @@ grep -q '端口不是有效数字' "$WORK_DIR/security-port.log" || fail "非数
 grep -q '端口超出有效范围' "$WORK_DIR/security-port.log" || fail "越界探测端口未返回明确原因"
 grep -q 'integer expression expected' "$WORK_DIR/security-port.log" && fail "超长端口触发了 shell 整数错误"
 pass "端口探测参数校验与命令注入回归"
+
+if MOCK_CURL_LOG="$WORK_DIR/curl-unresolved.log" PATH="$FAKE_BIN:$PATH" \
+    API_BASE_URL="http://api.test" RUSTDESK_API_INTERNAL_SECRET="fixture-secret" \
+    OLD_RUSTDESK_HOST="unresolvable.invalid" PORT_TIMEOUT_SECONDS=1 \
+    sh "$ROOT_DIR/scripts/deploy/controlled-security-check.sh" >"$WORK_DIR/security-unresolved.log" 2>&1; then
+    fail "无法解析的旧服务地址不应被判定为端口已关闭"
+fi
+grep -q 'ERR-2394.*无法确认已关闭' "$WORK_DIR/security-unresolved.log" || fail "旧服务地址解析失败未明确报告无法确认"
+grep -q 'PASS: 旧裸' "$WORK_DIR/security-unresolved.log" && fail "旧服务地址解析失败被误记为通过"
+grep -q '旧裸 hbbs 21116/UDP 未经 TCP 探针验证' "$WORK_DIR/security-unresolved.log" || fail "旧服务 UDP 暴露边界未标记为未验证"
+
+if MOCK_CURL_LOG="$WORK_DIR/curl-timeout.log" PATH="$FAKE_BIN:$PATH" \
+    API_BASE_URL="http://api.test" RUSTDESK_API_INTERNAL_SECRET="fixture-secret" \
+    OLD_RUSTDESK_HOST="127.0.0.1" PORT_TIMEOUT_SECONDS=invalid \
+    sh "$ROOT_DIR/scripts/deploy/controlled-security-check.sh" >"$WORK_DIR/security-timeout.log" 2>&1; then
+    fail "无效探测超时不应被判定为端口已关闭"
+fi
+grep -q 'ERR-2394.*无法确认已关闭' "$WORK_DIR/security-timeout.log" || fail "无效探测超时未明确报告无法确认"
+pass "端口探测解析失败及无效超时默认拒绝回归"
 
 OFFLINE_DIR="$WORK_DIR/offline-release"
 mkdir -p "$OFFLINE_DIR"
