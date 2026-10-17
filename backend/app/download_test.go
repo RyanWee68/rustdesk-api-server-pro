@@ -2,6 +2,7 @@ package app
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"mime"
@@ -25,7 +26,10 @@ func TestDownloadRoutes(t *testing.T) {
 	}
 
 	application := iris.New()
-	SetDownloadRoutes(application, dir)
+	setDownloadRoutes(application, dir, map[string]publicDownload{
+		"/downloads/rustdesk.jtzxsoft.com.cert.cer": {fileName: "rustdesk.jtzxsoft.com.cert.cer"},
+		"/downloads/rustdesk-1.4.9-x86_64.exe":      {fileName: "rustdesk-1.4.9-x86_64.exe"},
+	})
 	if err := application.Build(); err != nil {
 		t.Fatal(err)
 	}
@@ -58,6 +62,18 @@ func TestDownloadRoutes(t *testing.T) {
 	application.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/downloads/../server.db", nil))
 	if response.Code != http.StatusNotFound {
 		t.Fatalf("unexpected path status=%d", response.Code)
+	}
+}
+
+// TestPublicDownloadsRequireChecksums 验证公开分发文件均固定预期摘要。
+func TestPublicDownloadsRequireChecksums(t *testing.T) {
+	for routePath, download := range publicDownloads {
+		if len(download.sha256) != sha256.Size*2 {
+			t.Fatalf("download %s checksum length=%d", routePath, len(download.sha256))
+		}
+		if _, err := hex.DecodeString(download.sha256); err != nil {
+			t.Fatalf("download %s checksum is invalid: %v", routePath, err)
+		}
 	}
 }
 
