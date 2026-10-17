@@ -78,19 +78,25 @@ func TestPublicDownloadsRequireChecksums(t *testing.T) {
 	}
 }
 
-// TestPublicDownloadMetadataMatchesPage 验证下载页与服务端使用相同文件名和摘要。
-func TestPublicDownloadMetadataMatchesPage(t *testing.T) {
-	page, err := os.ReadFile(filepath.Join("..", "..", "soybean-admin", "src", "views", "about", "downloads", "index.vue"))
-	if err != nil {
-		t.Fatal(err)
+// TestPublicDownloadMetadataMatchesConsumers 验证下载页和验收脚本与服务端使用相同摘要。
+func TestPublicDownloadMetadataMatchesConsumers(t *testing.T) {
+	files := []string{
+		filepath.Join("..", "..", "soybean-admin", "src", "views", "about", "downloads", "index.vue"),
+		filepath.Join("..", "..", "scripts", "deploy", "controlled-security-check.sh"),
 	}
-	contents := strings.ToUpper(strings.ReplaceAll(string(page), ":", ""))
-	for routePath, download := range publicDownloads {
-		if !strings.Contains(contents, strings.ToUpper(download.fileName)) {
-			t.Fatalf("download page is missing file %s", routePath)
+	for _, fileName := range files {
+		content, err := os.ReadFile(fileName)
+		if err != nil {
+			t.Fatal(err)
 		}
-		if !strings.Contains(contents, strings.ToUpper(download.sha256)) {
-			t.Fatalf("download page checksum differs for %s", routePath)
+		contents := strings.ToUpper(strings.ReplaceAll(string(content), ":", ""))
+		for routePath, download := range publicDownloads {
+			if !strings.Contains(contents, strings.ToUpper(download.fileName)) {
+				t.Fatalf("%s is missing file %s", fileName, routePath)
+			}
+			if !strings.Contains(contents, strings.ToUpper(download.sha256)) {
+				t.Fatalf("%s checksum differs for %s", fileName, routePath)
+			}
 		}
 	}
 }

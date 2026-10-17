@@ -221,6 +221,7 @@ cat > "$FAKE_BIN/curl" <<'EOF'
 secret=""
 url=""
 noproxy=0
+output_file=""
 [ "$1" = "-q" ] || exit 1
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -242,6 +243,10 @@ while [ "$#" -gt 0 ]; do
                 "X-Internal-Secret: "*) exit 1 ;;
             esac
             ;;
+        -o)
+            shift
+            output_file="$1"
+            ;;
         http://*|https://*) url="$1" ;;
     esac
     shift
@@ -251,6 +256,20 @@ printf '%s\n' "$url" >> "$MOCK_CURL_LOG"
 case "$url" in
     https://management.test:22346/)
         [ "${MOCK_MANAGEMENT_MODE:-ok}" != "cert-fail" ] || exit 60
+        printf '200'
+        exit 0
+        ;;
+    https://management.test:22346/downloads/rustdesk.jtzxsoft.com.cert.cer)
+        printf 'fixture certificate' > "$output_file"
+        printf '200'
+        exit 0
+        ;;
+    https://management.test:22346/downloads/rustdesk-1.4.9-x86_64.exe)
+        if [ "${MOCK_MANAGEMENT_MODE:-ok}" = "download-fail" ]; then
+            printf '404'
+            exit 0
+        fi
+        printf 'fixture installer' > "$output_file"
         printf '200'
         exit 0
         ;;
@@ -306,12 +325,49 @@ grep -q 'ERR-2394' "$WORK_DIR/security-spoof.log" || fail "安全检查 JSON 失
 pass "内部 API 安全检查严格响应与无副作用回归"
 
 printf 'fixture public certificate\n' > "$WORK_DIR/management-ca.pem"
+fixture_cert_sha256="$(printf 'fixture certificate' | sha256sum | awk '{print $1}')"
+fixture_installer_sha256="$(printf 'fixture installer' | sha256sum | awk '{print $1}')"
 MOCK_CURL_LOG="$WORK_DIR/curl-management.log" PATH="$FAKE_BIN:$PATH" \
     API_BASE_URL="http://api.test" RUSTDESK_API_INTERNAL_SECRET="fixture-secret" \
     ADMIN_HTTPS_URL="https://management.test:22346" ADMIN_TLS_CA_FILE="$WORK_DIR/management-ca.pem" \
+    ADMIN_CERT_SHA256="$fixture_cert_sha256" ADMIN_INSTALLER_SHA256="$fixture_installer_sha256" \
     sh "$ROOT_DIR/scripts/deploy/controlled-security-check.sh" >"$WORK_DIR/security-management.log" 2>&1
 grep -q 'PASS: 管理页 HTTPS 证书和首页访问通过' "$WORK_DIR/security-management.log" || fail "管理页 HTTPS 正向检查未通过"
+grep -q 'PASS: 管理页公开证书 HTTPS 下载和 SHA-256 校验通过' "$WORK_DIR/security-management.log" || fail "管理页证书下载摘要检查未通过"
+grep -q 'PASS: RustDesk 1.4.9 安装包 HTTPS 下载和 SHA-256 校验通过' "$WORK_DIR/security-management.log" || fail "安装包下载摘要检查未通过"
 grep -q 'PASS: 管理页 TLS 端口拒绝明文 HTTP' "$WORK_DIR/security-management.log" || fail "管理页明文 HTTP 拒绝未通过"
+
+if MOCK_CURL_LOG="$WORK_DIR/curl-management-digest.log" PATH="$FAKE_BIN:$PATH" \
+    API_BASE_URL="http://api.test" RUSTDESK_API_INTERNAL_SECRET="fixture-secret" \
+    ADMIN_HTTPS_URL="https://management.test:22346" ADMIN_TLS_CA_FILE="$WORK_DIR/management-ca.pem" \
+    ADMIN_CERT_SHA256="$fixture_cert_sha256" ADMIN_INSTALLER_SHA256="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+    sh "$ROOT_DIR/scripts/deploy/controlled-security-check.sh" >"$WORK_DIR/security-management-digest.log" 2>&1; then
+    fail "安装包下载摘要错误未被拒绝"
+fi
+grep -q 'ERR-2394.*安装包 SHA-256 不匹配' "$WORK_DIR/security-management-digest.log" || fail "安装包摘要错误缺少 ERR-2394"
+
+if MOCK_CURL_LOG="$WORK_DIR/curl-management-download.log" MOCK_MANAGEMENT_MODE=download-fail PATH="$FAKE_BIN:$PATH" \
+    API_BASE_URL="http://api.test" RUSTDESK_API_INTERNAL_SECRET="fixture-secret" \
+    ADMIN_HTTPS_URL="https://management.test:22346" ADMIN_TLS_CA_FILE="$WORK_DIR/management-ca.pem" \
+    ADMIN_CERT_SHA256="$fixture_cert_sha256" ADMIN_INSTALLER_SHA256="$fixture_installer_sha256" \
+    sh "$ROOT_DIR/scripts/deploy/controlled-security-check.sh" >"$WORK_DIR/security-management-download.log" 2>&1; then
+    fail "安装包下载 HTTP 失败未被拒绝"
+fi
+grep -q 'ERR-2394.*安装包.*下载失败.*HTTP 404' "$WORK_DIR/security-management-download.log" || fail "安装包下载 HTTP 失败缺少 ERR-2394"
+
+invalid_digest_index=0
+for invalid_digest in bad gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg; do
+    invalid_digest_index=$((invalid_digest_index + 1))
+    invalid_digest_log="$WORK_DIR/security-management-invalid-digest-${invalid_digest_index}.log"
+    if MOCK_CURL_LOG="$WORK_DIR/curl-management-invalid-digest-${invalid_digest_index}.log" PATH="$FAKE_BIN:$PATH" \
+        API_BASE_URL="http://api.test" RUSTDESK_API_INTERNAL_SECRET="fixture-secret" \
+        ADMIN_HTTPS_URL="https://management.test:22346" ADMIN_TLS_CA_FILE="$WORK_DIR/management-ca.pem" \
+        ADMIN_CERT_SHA256="$invalid_digest" ADMIN_INSTALLER_SHA256="$fixture_installer_sha256" \
+        sh "$ROOT_DIR/scripts/deploy/controlled-security-check.sh" >"$invalid_digest_log" 2>&1; then
+        fail "非法下载摘要未被拒绝"
+    fi
+    grep -q 'ERR-2394.*预期 SHA-256.*无效' "$invalid_digest_log" || fail "非法下载摘要缺少 ERR-2394"
+done
 
 if MOCK_CURL_LOG="$WORK_DIR/curl-management-cert.log" MOCK_MANAGEMENT_MODE=cert-fail PATH="$FAKE_BIN:$PATH" \
     API_BASE_URL="http://api.test" RUSTDESK_API_INTERNAL_SECRET="fixture-secret" \
@@ -344,7 +400,7 @@ if MOCK_CURL_LOG="$WORK_DIR/curl-management-missing.log" PATH="$FAKE_BIN:$PATH" 
     fail "管理页 HTTPS URL 与 CA 缺项未被拒绝"
 fi
 grep -q 'ERR-2394.*必须同时设置' "$WORK_DIR/security-management-missing.log" || fail "管理页 HTTPS 缺项拒绝缺少 ERR-2394"
-pass "管理页受信任 HTTPS、证书失败和明文拒绝回归"
+pass "管理页受信任 HTTPS、下载摘要、证书失败和明文拒绝回归"
 
 INJECTION_MARKER="$WORK_DIR/port-injection"
 if MOCK_CURL_LOG="$WORK_DIR/curl-endpoint.log" PATH="$FAKE_BIN:$PATH" \

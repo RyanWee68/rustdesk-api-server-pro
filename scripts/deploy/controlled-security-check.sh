@@ -138,6 +138,13 @@ check_management_https() {
     fi
     pass "管理页 HTTPS 证书和首页访问通过：$https_url"
 
+    check_https_download "$https_url" "downloads/rustdesk.jtzxsoft.com.cert.cer" \
+        "${ADMIN_CERT_SHA256:-f56a892ab90b0e85687403979d5f9901084b6e2657c74eff6dc9e93aede0d96d}" \
+        "管理页公开证书" "$ca_file"
+    check_https_download "$https_url" "downloads/rustdesk-1.4.9-x86_64.exe" \
+        "${ADMIN_INSTALLER_SHA256:-eaedeb0088e687bf46f7c46a9c6ea5493ce51f3134dfd6acbedb47b5b9136274}" \
+        "RustDesk 1.4.9 安装包" "$ca_file"
+
     http_status="000"
     if http_result="$(curl -q --noproxy '*' --proto '=http' -sS -m "${HTTP_TIMEOUT_SECONDS:-5}" \
         -o /dev/null -w '%{http_code}' -- "$http_url" 2>/dev/null)"; then
@@ -147,6 +154,52 @@ check_management_https() {
         2??|3??) fail "管理页 TLS 端口仍接受明文 HTTP：$http_url（HTTP $http_status）" ;;
         *) pass "管理页 TLS 端口拒绝明文 HTTP：$http_url" ;;
     esac
+}
+
+check_https_download() {
+    base_url="$1"
+    relative_path="$2"
+    expected_sha256="$3"
+    label="$4"
+    download_ca_file="$5"
+
+    if [ "${#expected_sha256}" -ne 64 ]; then
+        fail "$label 的预期 SHA-256 长度无效"
+        return
+    fi
+    case "$expected_sha256" in
+        *[!0-9A-Fa-f]*) fail "$label 的预期 SHA-256 格式无效"; return ;;
+    esac
+    if ! select_python; then
+        fail "未找到可执行的 python3/python，无法校验 $label 摘要"
+        return
+    fi
+    temp_file="$(mktemp)" || {
+        fail "无法创建 $label 临时文件"
+        return
+    }
+    download_url="${base_url}${relative_path}"
+    status="000"
+    if result="$(curl -q --noproxy '*' --proto '=https' --tlsv1.2 --cacert "$download_ca_file" \
+        -sS -m "${DOWNLOAD_TIMEOUT_SECONDS:-60}" -o "$temp_file" -w '%{http_code}' -- "$download_url" 2>/dev/null)"; then
+        status="$result"
+    fi
+    if [ "$status" != "200" ]; then
+        rm -f "$temp_file"
+        fail "$label 下载失败：$download_url（HTTP $status）"
+        return
+    fi
+    actual_sha256="$("$json_parser" -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "$temp_file")" || {
+        rm -f "$temp_file"
+        fail "$label 摘要计算失败"
+        return
+    }
+    rm -f "$temp_file"
+    if [ "$(printf '%s' "$actual_sha256" | tr 'A-F' 'a-f')" != "$(printf '%s' "$expected_sha256" | tr 'A-F' 'a-f')" ]; then
+        fail "$label SHA-256 不匹配"
+        return
+    fi
+    pass "$label HTTPS 下载和 SHA-256 校验通过"
 }
 
 select_python() {
