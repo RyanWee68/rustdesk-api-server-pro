@@ -1,7 +1,9 @@
 package app
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"mime"
 	"net/http"
 	"net/http/httptest"
@@ -72,7 +74,11 @@ func TestDownloadFiles(t *testing.T) {
 		}
 	}
 	application := iris.New()
-	SetDownloadRoutes(application, dir)
+	testDownloads := make(map[string]publicDownload, len(files))
+	for name := range files {
+		testDownloads["/downloads/"+name] = publicDownload{fileName: name}
+	}
+	setDownloadRoutes(application, dir, testDownloads)
 	if err := application.Build(); err != nil {
 		t.Fatal(err)
 	}
@@ -95,6 +101,49 @@ func TestDownloadFiles(t *testing.T) {
 				t.Fatalf("range status=%d body=%q", response.Code, response.Body.String())
 			}
 		})
+	}
+}
+
+// TestDownloadRejectsChecksumMismatch 验证固定安装包被替换后不会继续公开下载。
+func TestDownloadRejectsChecksumMismatch(t *testing.T) {
+	dir := t.TempDir()
+	fileName := "rustdesk-1.4.9-x86_64.exe"
+	content := []byte("expected-installer")
+	expected := fmt.Sprintf("%X", sha256.Sum256(content))
+	if err := os.WriteFile(filepath.Join(dir, fileName), []byte("replaced-installer"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	application := iris.New()
+	setDownloadRoutes(application, dir, map[string]publicDownload{
+		"/downloads/" + fileName: {fileName: fileName, sha256: expected},
+	})
+	if err := application.Build(); err != nil {
+		t.Fatal(err)
+	}
+
+	response := httptest.NewRecorder()
+	application.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/downloads/"+fileName, nil))
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("checksum mismatch status=%d body=%q", response.Code, response.Body.String())
+	}
+	var body struct {
+		Code string `json:"code"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Code != errcode.ERRB009.Code {
+		t.Fatalf("code=%q want=%q", body.Code, errcode.ERRB009.Code)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, fileName), content, 0600); err != nil {
+		t.Fatal(err)
+	}
+	response = httptest.NewRecorder()
+	application.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/downloads/"+fileName, nil))
+	if response.Code != http.StatusOK || response.Body.String() != string(content) {
+		t.Fatalf("verified download status=%d body=%q", response.Code, response.Body.String())
 	}
 }
 

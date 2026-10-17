@@ -317,6 +317,7 @@ var (
 	ERRB006 = register("ERR-B006", "CreateDeviceCheckJobFailed", "infra", "创建设备检查定时任务失败", "检查定时任务配置，查看服务端日志获取详细错误", "Failed to create device check job", "Check job configuration, check server logs for details")
 	ERRB007 = register("ERR-B007", "DownloadFileNotFound", "infra", "下载文件不存在", "确认服务器数据目录已部署对应文件", "Download file not found", "Confirm the requested file is deployed in the server data directory")
 	ERRB008 = register("ERR-B008", "DownloadFileFailed", "infra", "发送下载文件失败", "检查文件权限、磁盘状态和服务端日志", "Failed to send download file", "Check file permissions, disk status, and server logs")
+	ERRB009 = register("ERR-B009", "DownloadFileChecksumMismatch", "infra", "下载文件校验失败", "重新部署摘要匹配的下载文件", "Download file checksum mismatch", "Redeploy the download file with the expected checksum")
 	ERRB010 = register("ERR-B010", "DatabaseError", "infra", "数据库操作错误", "检查数据库连接和配置，查看服务端日志获取详细错误", "Database operation error", "Check database connection and configuration, check server logs for details")
 )
 
