@@ -146,14 +146,22 @@ check_management_https() {
         "RustDesk 1.4.9 安装包" "$ca_file"
 
     http_status="000"
+    http_exit=0
     if http_result="$(curl -q --noproxy '*' --proto '=http' -sS -m "${HTTP_TIMEOUT_SECONDS:-5}" \
         -o /dev/null -w '%{http_code}' -- "$http_url" 2>/dev/null)"; then
         http_status="$http_result"
+    else
+        http_exit=$?
     fi
-    case "$http_status" in
-        2??|3??) fail "管理页 TLS 端口仍接受明文 HTTP：$http_url（HTTP $http_status）" ;;
-        *) pass "管理页 TLS 端口拒绝明文 HTTP：$http_url" ;;
-    esac
+    if [ "$http_exit" -ne 0 ]; then
+        fail "管理页明文 HTTP 拒绝状态无法确认：$http_url（curl $http_exit）"
+    else
+        case "$http_status" in
+            2??|3??) fail "管理页 TLS 端口仍接受明文 HTTP：$http_url（HTTP $http_status）" ;;
+            4[0-9][0-9]|5[0-9][0-9]) pass "管理页 TLS 端口拒绝明文 HTTP：$http_url" ;;
+            *) fail "管理页明文 HTTP 拒绝状态无法确认：$http_url（HTTP $http_status）" ;;
+        esac
+    fi
 }
 
 check_https_download() {

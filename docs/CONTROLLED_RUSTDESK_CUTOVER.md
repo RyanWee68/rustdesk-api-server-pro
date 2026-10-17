@@ -70,7 +70,7 @@ export ADMIN_TLS_CA_FILE="$PRIVATE_DEPLOY_DIR/data/tls/server.fullchain.pem"
 sh scripts/deploy/controlled-security-check.sh
 ```
 
-该检查要求受信任 HTTPS 首页返回 200，验证同端口明文 HTTP 不能返回 2xx/3xx，并下载公开 DER 证书和 RustDesk 1.4.9 安装包核对固定 SHA-256。证书或安装包经审核替换时，可分别通过 `ADMIN_CERT_SHA256`、`ADMIN_INSTALLER_SHA256` 提供新的预期摘要，但必须同步更新下载页和后端门禁。它不会替代浏览器证书安装、RustDesk 客户端连接、UDP 或独立公网端口扫描。
+该检查要求受信任 HTTPS 首页返回 200，同端口明文 HTTP 请求成功完成且返回明确的 4xx/5xx 才记为拒绝，并下载公开 DER 证书和 RustDesk 1.4.9 安装包核对固定 SHA-256。明文 2xx/3xx、异常响应或任何传输失败都会使检查失败；超时、连接重置或空响应需另取服务端证据，不可据此认定仅 HTTPS 已生效。证书或安装包经审核替换时，可分别通过 `ADMIN_CERT_SHA256`、`ADMIN_INSTALLER_SHA256` 提供新的预期摘要，但必须同步更新下载页和后端门禁。它不会替代浏览器证书安装、RustDesk 客户端连接、UDP 或独立公网端口扫描。
 
 ## 数据迁移演练
 

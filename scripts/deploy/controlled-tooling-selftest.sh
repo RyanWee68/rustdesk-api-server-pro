@@ -274,8 +274,12 @@ case "$url" in
         exit 0
         ;;
     http://management.test:22346/)
-        if [ "${MOCK_MANAGEMENT_MODE:-ok}" = "http-open" ]; then printf '200'; else printf '400'; fi
-        exit 0
+        if [ "${MOCK_MANAGEMENT_MODE:-ok}" = "http-open" ]; then
+            printf '200'
+        else
+            printf '%s' "${MOCK_MANAGEMENT_HTTP_STATUS:-400}"
+        fi
+        exit "${MOCK_MANAGEMENT_HTTP_EXIT:-0}"
         ;;
 esac
 case "$secret" in
@@ -384,6 +388,35 @@ if MOCK_CURL_LOG="$WORK_DIR/curl-management-http.log" MOCK_MANAGEMENT_MODE=http-
     fail "管理页 TLS 端口接受明文 HTTP 时安全检查未失败"
 fi
 grep -q 'ERR-2394.*仍接受明文 HTTP' "$WORK_DIR/security-management-http.log" || fail "管理页明文开放缺少 ERR-2394"
+
+for http_exit in 6 7 28 52 56; do
+    http_failure_log="$WORK_DIR/security-management-http-exit-${http_exit}.log"
+    if MOCK_CURL_LOG="$WORK_DIR/curl-management-http-exit-${http_exit}.log" \
+        MOCK_MANAGEMENT_HTTP_EXIT="$http_exit" PATH="$FAKE_BIN:$PATH" \
+        API_BASE_URL="http://api.test" RUSTDESK_API_INTERNAL_SECRET="fixture-secret" \
+        ADMIN_HTTPS_URL="https://management.test:22346" ADMIN_TLS_CA_FILE="$WORK_DIR/management-ca.pem" \
+        ADMIN_CERT_SHA256="$fixture_cert_sha256" ADMIN_INSTALLER_SHA256="$fixture_installer_sha256" \
+        sh "$ROOT_DIR/scripts/deploy/controlled-security-check.sh" >"$http_failure_log" 2>&1; then
+        fail "明文 HTTP 请求错误 $http_exit 被误判为拒绝通过"
+    fi
+    grep -q "ERR-2394.*拒绝状态无法确认.*curl $http_exit" "$http_failure_log" || fail "明文 HTTP 请求错误缺少明确失败原因"
+    if grep -q 'PASS: 管理页 TLS 端口拒绝明文 HTTP' "$http_failure_log"; then
+        fail "明文 HTTP 请求错误仍输出拒绝通过"
+    fi
+done
+
+for http_status in 101 302 000 invalid; do
+    http_status_log="$WORK_DIR/security-management-http-status-${http_status}.log"
+    if MOCK_CURL_LOG="$WORK_DIR/curl-management-http-status-${http_status}.log" \
+        MOCK_MANAGEMENT_HTTP_STATUS="$http_status" PATH="$FAKE_BIN:$PATH" \
+        API_BASE_URL="http://api.test" RUSTDESK_API_INTERNAL_SECRET="fixture-secret" \
+        ADMIN_HTTPS_URL="https://management.test:22346" ADMIN_TLS_CA_FILE="$WORK_DIR/management-ca.pem" \
+        ADMIN_CERT_SHA256="$fixture_cert_sha256" ADMIN_INSTALLER_SHA256="$fixture_installer_sha256" \
+        sh "$ROOT_DIR/scripts/deploy/controlled-security-check.sh" >"$http_status_log" 2>&1; then
+        fail "明文 HTTP 非拒绝响应 $http_status 被误判为通过"
+    fi
+    grep -q 'ERR-2394' "$http_status_log" || fail "明文 HTTP 非拒绝响应缺少 ERR-2394"
+done
 
 if MOCK_CURL_LOG="$WORK_DIR/curl-management-url.log" PATH="$FAKE_BIN:$PATH" \
     API_BASE_URL="http://api.test" RUSTDESK_API_INTERNAL_SECRET="fixture-secret" \
