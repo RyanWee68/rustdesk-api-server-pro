@@ -25,7 +25,8 @@
 - 复用现有 Git 授权，在用户仓库 `RyanWee68/rustdesk-api-server-pro` 的 `codex/release-followup` 分支手工触发[受控部署回归 39047606965](https://github.com/RyanWee68/rustdesk-api-server-pro/actions/runs/39047606965)，检查提交为 `a8ec17a4501e2a2a37fc1c09d7e8ce6df3cf1737`；没有修改工作流触发范围，没有发布镜像或访问 0.211。
 - `acceptance`、`rust-template` 作业已成功。Linux 日志确认 TLS 配置完整性、私钥权限、目录链接拒绝，以及离线清单/归档/环境/来源文件符号链接拒绝及恢复均通过，补齐上轮 Windows 无法验证的语义。
 - 后端测试与构建、前端类型检查与构建、Compose 流程回归及临时 API 准入验收通过；综合验收为 0 项失败、0 项警告、7 项环境跳过。真实 fork 与镜像检查由独立作业承担，不能把这些跳过写成全部通过。
-- 记录时 `server-fork` 仍在执行库测试，真实三容器作业尚未完成；整轮 CI 结论待核对。正式 TLS 重建、客户端/独立公网验收及外部认证的待办状态不变。
+- 最终复核四作业全部成功：`server-fork` 完成 hbbs/hbbr 编译及 17/17 库测试；`real-three-containers` 完成镜像构建、前端增量镜像契约、基础与 TLS 合并 Compose 预检、跨容器准入、API 停止拒绝及恢复、重建与三卷持久化。WebSocket 明文令牌与伪造来源头拒绝通过，但不是正常 WSS 通过。正式 TLS 重建、客户端/独立公网验收及外部认证的待办状态不变。
+- 再次只读核对仓库外 1.4.9 安装包的 Windows 签名，仍返回 `UnknownError`：无法建立到信任根颁发机构的证书链。没有安装证书或修改系统信任；完整签名信任链继续待验收。
 
 ### 2026-10-17 离线开发：TLS 与离线包文件边界
 
