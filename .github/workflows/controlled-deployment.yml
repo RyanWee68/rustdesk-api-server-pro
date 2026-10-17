@@ -53,7 +53,7 @@ jobs:
       - name: 准备 Rust 构建依赖
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang libclang-dev libsodium-dev libsqlite3-dev pkg-config ripgrep
+          sudo apt-get install -y clang libclang-dev libsodium-dev libsqlite3-dev pkg-config ripgrep openssl
           rustup toolchain install 1.99.0 --profile minimal
       - name: 获取固定官方基线
         run: |
@@ -81,7 +81,7 @@ jobs:
       - name: 准备协议探针依赖
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsodium23
+          sudo apt-get install -y libsodium23 openssl
           docker pull alpine:3.20.3
       - name: 构建真实受控镜像
         run: |
@@ -113,6 +113,15 @@ jobs:
             config --format json > "${RUNNER_TEMP}/controlled-tls-compose.json"
           python3 scripts/deploy/controlled-compose-preflight.py \
             --config-json "${RUNNER_TEMP}/controlled-tls-compose.json"
+          export WSS_TLS_DIR="${RUNNER_TEMP}/controlled-wss-certificates"
+          mkdir -p "$WSS_TLS_DIR"
+          docker compose \
+            -f docker-compose.controlled.yaml \
+            -f docker-compose.controlled-tls.yaml \
+            -f docker-compose.controlled-wss.yaml \
+            config --format json > "${RUNNER_TEMP}/controlled-wss-compose.json"
+          python3 scripts/deploy/controlled-compose-preflight.py \
+            --config-json "${RUNNER_TEMP}/controlled-wss-compose.json"
       - name: 三容器协议、API 故障及持久化验收
         run: sudo env RUSTDESK_API_IMAGE="$RUSTDESK_API_IMAGE" RUSTDESK_CONTROLLED_SERVER_IMAGE="$RUSTDESK_CONTROLLED_SERVER_IMAGE" sh scripts/deploy/controlled-three-compose-smoke.sh .
         env:

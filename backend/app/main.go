@@ -7,6 +7,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -199,12 +200,8 @@ func startTLSServer(app *iris.Application, cfg *config.ServerConfig, targetPort 
 		httpPort = "8080"
 	}
 	target := &url.URL{Scheme: "http", Host: "127.0.0.1:" + httpPort}
-	proxy := httputil.NewSingleHostReverseProxy(target)
-	originalDirector := proxy.Director
-	proxy.Director = func(req *http.Request) {
-		originalDirector(req)
-		req.Header.Set("X-Forwarded-Proto", "https")
-	}
+	clientTarget := &url.URL{Scheme: "http", Host: "127.0.0.1:" + strings.TrimPrefix(strings.TrimSpace(cfg.HttpConfig.Port), ":")}
+	proxy := newTLSProxy(target, clientTarget)
 
 	tlsServer := &http.Server{
 		Addr:    cfg.HttpConfig.TLSPort,
@@ -219,4 +216,23 @@ func startTLSServer(app *iris.Application, cfg *config.ServerConfig, targetPort 
 	if err := tlsServer.ListenAndServeTLS(certFile, keyFile); err != nil && err != http.ErrServerClosed {
 		app.Logger().Errorf("HTTPS 服务器启动失败: %v", err)
 	}
+}
+
+// newTLSProxy 让浏览器复用 HTTPS 登录客户端 API，不向客户端监听端口转发内部接口。
+func newTLSProxy(adminTarget, clientTarget *url.URL) *httputil.ReverseProxy {
+	proxy := httputil.NewSingleHostReverseProxy(adminTarget)
+	originalDirector := proxy.Director
+	proxy.Director = func(req *http.Request) {
+		originalDirector(req)
+		requestPath := path.Clean(req.URL.Path)
+		for _, prefix := range []string{"/api", "/lic/web/api"} {
+			if requestPath == prefix || strings.HasPrefix(requestPath, prefix+"/") {
+				req.URL.Scheme = clientTarget.Scheme
+				req.URL.Host = clientTarget.Host
+				break
+			}
+		}
+		req.Header.Set("X-Forwarded-Proto", "https")
+	}
+	return proxy
 }

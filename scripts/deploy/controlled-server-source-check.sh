@@ -154,7 +154,18 @@ check_fail_closed_contract() {
         else
             pass "WebSocket 入口忽略未认证的转发来源头：$file"
         fi
+        if ! contains 'controlled_ws::accept' "$dir/src/$file"; then
+            fail "WebSocket 入口缺少原生 TLS 传输校验：$file"
+        fi
     done
+    if [ -f "$dir/src/controlled_ws.rs" ] &&
+        contains 'WSS_CERT_FILE' "$dir/src/controlled_ws.rs" &&
+        contains 'WSS_KEY_FILE' "$dir/src/controlled_ws.rs" &&
+        contains 'WSS 未配置证书，拒绝 WebSocket 连接' "$dir/src/controlled_ws.rs"; then
+        pass "原生 WSS 显式证书配置且禁用时拒绝连接"
+    else
+        fail "缺少原生 WSS 证书与默认拒绝入口"
+    fi
 
     if contains_any "$dir" 'MUST_LOGIN' 'must_login'; then
         pass "源码包含强制登录开关线索"

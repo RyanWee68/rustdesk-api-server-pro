@@ -4,7 +4,7 @@
 import copy
 import ipaddress
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import subprocess
 import sys
@@ -35,6 +35,17 @@ def verify(config):
     require(api.get("environment", {}).get("PORT") == "12345"
             and api.get("environment", {}).get("ADMIN_PORT") == "12346", "API 容器端口与部署契约不一致")
     tls_env = {name: api_env.get(name, "") for name in ("TLS_PORT", "TLS_CERT_FILE", "TLS_KEY_FILE")}
+    wss_configs = [tuple(services[name].get("environment", {}).get(key, "")
+                         for key in ("WSS_CERT_FILE", "WSS_KEY_FILE"))
+                   for name in ("rustdesk-hbbs", "rustdesk-hbbr")]
+    require(wss_configs[0] == wss_configs[1], "hbbs/hbbr 的 WSS 证书配置必须一致")
+    wss_enabled = any(wss_configs[0])
+    if wss_enabled:
+        require(all(isinstance(value, str) and re.fullmatch(r"/tls/[A-Za-z0-9_.-]+", value)
+                    and PurePosixPath(value).name not in {".", ".."} for value in wss_configs[0]),
+                "WSS 证书与私钥必须同时设置且为 /tls 的直接子文件")
+        require(wss_configs[0][0] != wss_configs[0][1], "WSS 证书和私钥不能使用同一文件")
+        require(tls_env["TLS_PORT"] == "12443", "浏览器 WSS 部署必须同时提供 HTTPS API 入口")
     expected_ports = {
         api_name: {(12345, "tcp"), (12346, "tcp"), (12443, "tcp")},
         "rustdesk-hbbs": {(21115, "tcp"), (21116, "tcp"), (21116, "udp"), (21118, "tcp")},
@@ -46,12 +57,25 @@ def verify(config):
         require(not service.get("privileged") and not service.get("network_mode"), "禁止特权或共享主机网络模式")
         require(service.get("image") and not service.get("build"), "正式服务必须指定已构建镜像")
         destinations = {"/app/data", "/app/rustdesk-server", "/app/logs"} if name == api_name else {"/data"}
+        if name != api_name and wss_enabled:
+            destinations.add("/tls")
         volumes = service.get("volumes", [])
         require(len(volumes) == len(destinations) and {item.get("target") for item in volumes} == destinations,
                 "服务挂载了部署契约以外的目录")
         if name == api_name:
             require(next(item for item in volumes if item["target"] == "/app/logs").get("type") == "volume",
                     "API 日志必须使用独立持久卷")
+        elif wss_enabled:
+            binary = "hbbs" if name == "rustdesk-hbbs" else "hbbr"
+            require(service.get("command") == [binary, "--require-wss"] and not service.get("entrypoint"),
+                    "WSS 服务必须使用原生能力强制参数启动，禁止覆盖入口")
+            mount = next(item for item in volumes if item["target"] == "/tls")
+            source = mount.get("source", "")
+            require(mount.get("type") == "bind" and mount.get("read_only") is True
+                    and isinstance(source, str) and PurePosixPath(source).is_absolute()
+                    and str(PurePosixPath(source)) == source and source != "/"
+                    and ".." not in PurePosixPath(source).parts,
+                    "WSS 证书目录必须以规范绝对路径只读绑定，禁止绑定宿主根目录")
         actual_ports = []
         for port in service.get("ports", []):
             require(isinstance(port, dict), "端口未规范化")
@@ -66,8 +90,8 @@ def verify(config):
                 require(address.is_loopback or any(address in network for network in admin_lan_networks),
                         "管理端口必须绑定回环或明确的局域网 IPv4 地址")
             elif target in {21118, 21119}:
-                require(ipaddress.ip_address(port.get("host_ip", "0.0.0.0")).is_loopback,
-                        "WebSocket 端口必须仅绑定回环地址")
+                require(wss_enabled or ipaddress.ip_address(port.get("host_ip", "0.0.0.0")).is_loopback,
+                        "未配置原生 WSS 时 WebSocket 端口必须仅绑定回环地址")
         require(len(actual_ports) == len(set(actual_ports)), "正式三容器存在重复端口发布")
         if name == api_name:
             require((12345, "tcp") in actual_ports
@@ -92,6 +116,10 @@ def verify(config):
             require(env.get("API_SERVER") == "http://rustdesk-api-server-pro:12345", "server 鉴权地址必须指向同部署 API")
             require(service.get("depends_on", {}).get(api_name, {}).get("condition") == "service_healthy",
                     "server 缺少 API 健康依赖")
+    if wss_enabled:
+        sources = {next(item["source"] for item in services[name]["volumes"] if item["target"] == "/tls")
+                   for name in ("rustdesk-hbbs", "rustdesk-hbbr")}
+        require(len(sources) == 1, "hbbs/hbbr 必须读取同一 WSS 证书目录")
     keys = []
     for name, service in services.items():
         destination = "/app/rustdesk-server" if name == api_name else "/data"
@@ -221,6 +249,47 @@ def self_test():
         except RuntimeError:
             continue
         raise RuntimeError("ERR-2393 HTTPS 部署中的不安全管理端口未被拒绝")
+    wss_config = copy.deepcopy(tls_config)
+    for name in ("rustdesk-hbbs", "rustdesk-hbbr"):
+        wss_config["services"][name]["command"] = ["hbbs" if name == "rustdesk-hbbs" else "hbbr", "--require-wss"]
+        wss_config["services"][name]["environment"].update(
+            WSS_CERT_FILE="/tls/server.fullchain.pem", WSS_KEY_FILE="/tls/server.key.pem")
+        wss_config["services"][name]["volumes"].append(
+            {"target": "/tls", "type": "bind", "source": "/fixture/tls", "read_only": True})
+        wss_config["services"][name]["ports"][0]["host_ip"] = "0.0.0.0"
+    verify(wss_config)
+    wss_mutations = (
+        lambda s: s["rustdesk-hbbs"]["environment"].pop("WSS_KEY_FILE"),
+        lambda s: s["rustdesk-hbbs"]["environment"].update(WSS_CERT_FILE="/tmp/cert.pem"),
+        lambda s: s["rustdesk-hbbr"]["volumes"][1].update(read_only=False),
+        lambda s: s["rustdesk-hbbs"]["volumes"].pop(),
+        lambda s: s["rustdesk-hbbr"]["volumes"][1].update(source="/different/tls"),
+        lambda s: s["rustdesk-hbbr"]["volumes"][1].update(source="/"),
+        lambda s: s["rustdesk-hbbr"]["volumes"][1].update(source="/fixture/../tls"),
+        lambda s: s["rustdesk-hbbr"]["volumes"][1].update(type="volume"),
+        lambda s: s[api_name]["environment"].update(TLS_PORT=""),
+        lambda s: s["rustdesk-hbbs"].update(command=["hbbs"]),
+        lambda s: s["rustdesk-hbbr"].update(entrypoint=["sh", "-c"]),
+    )
+    for mutate in wss_mutations:
+        invalid = copy.deepcopy(wss_config)
+        mutate(invalid["services"])
+        try:
+            verify(invalid)
+        except RuntimeError:
+            continue
+        raise RuntimeError("ERR-2393 不安全 WSS 覆盖未被拒绝")
+    for cert, key in (("/tls/../cert.pem", "/tls/key.pem"),
+                      ("/tls/cert.pem", "/tls/cert.pem"), ("/tls/cert.pem", "")):
+        invalid = copy.deepcopy(wss_config)
+        for name in ("rustdesk-hbbs", "rustdesk-hbbr"):
+            invalid["services"][name]["environment"].update(WSS_CERT_FILE=cert, WSS_KEY_FILE=key)
+        try:
+            verify(invalid)
+        except RuntimeError:
+            continue
+        raise RuntimeError("ERR-2393 无效 WSS 证书配置未被拒绝")
+    print("PASS: 原生 WSS 只读证书部署通过，14 类不安全 WSS 覆盖被拒绝")
     for mutate in (
         lambda c: c["volumes"].pop("key"),
         lambda c: c["volumes"]["key"].update(external=True),

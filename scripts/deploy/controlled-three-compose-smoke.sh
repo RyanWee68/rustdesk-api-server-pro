@@ -10,7 +10,7 @@ fail() {
 ROOT_DIR="${1:-$(pwd)}"
 COMPOSE_FILE="$ROOT_DIR/docker-compose.controlled-three-isolated.yaml"
 [ -f "$COMPOSE_FILE" ] || fail "找不到三容器隔离 Compose 配置"
-for tool in docker python3; do
+for tool in docker python3 openssl; do
     command -v "$tool" >/dev/null 2>&1 || fail "缺少工具：$tool"
 done
 RUSTDESK_API_IMAGE="${RUSTDESK_API_IMAGE:-}"
@@ -32,10 +32,16 @@ export ADMIN_USER=controlledtest
 export ADMIN_PASS="$(sh "$ROOT_DIR/scripts/deploy/controlled-key-rotation.sh" generate-internal-secret)"
 export RUSTDESK_API_INTERNAL_SECRET="$(sh "$ROOT_DIR/scripts/deploy/controlled-key-rotation.sh" generate-internal-secret)"
 STARTED=0
+WSS_COMPOSE_FILE=""
+WSS_WORK_DIR=""
 
 # 只操作本次随机项目。
 compose() {
-    docker compose --env-file /dev/null -p "$PROJECT_NAME" -f "$COMPOSE_FILE" "$@"
+    if [ -n "$WSS_COMPOSE_FILE" ]; then
+        docker compose --env-file /dev/null -p "$PROJECT_NAME" -f "$COMPOSE_FILE" -f "$WSS_COMPOSE_FILE" "$@"
+    else
+        docker compose --env-file /dev/null -p "$PROJECT_NAME" -f "$COMPOSE_FILE" "$@"
+    fi
 }
 
 # 失败、中断和正常结束均清理本次专属资源。
@@ -45,6 +51,7 @@ cleanup() {
     if [ "$STARTED" = 1 ]; then
         compose down --volumes --remove-orphans || result=1
     fi
+    [ -z "$WSS_WORK_DIR" ] || rm -rf -- "$WSS_WORK_DIR"
     [ "$result" -eq 0 ] || printf 'ERR-239B 三容器测试或清理失败\n' >&2
     exit "$result"
 }
@@ -152,3 +159,27 @@ API_BASE_URL="http://$(service_ip rustdesk-api-server-pro):12345" \
     sh "$ROOT_DIR/scripts/deploy/controlled-admission-smoke.sh"
 relay_probe ERR-2315
 printf 'PASS: 三容器隔离启动、健康依赖、无端口发布、跨容器准入、重建与三个卷持久化通过\n'
+
+# 只在本次无宿主端口的隔离容器启用原生 TLS，证书与私钥随测试清理。
+WSS_WORK_DIR="$(mktemp -d)"
+export WSS_TLS_DIR="$WSS_WORK_DIR"
+export WSS_CERT_NAME=server.fullchain.pem WSS_KEY_NAME=server.key.pem
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost \
+    -addext subjectAltName=DNS:localhost -addext basicConstraints=critical,CA:FALSE \
+    -keyout "$WSS_WORK_DIR/server.key.pem" -out "$WSS_WORK_DIR/server.fullchain.pem" \
+    >"$WSS_WORK_DIR/openssl.log" 2>&1 || fail "临时 WSS 测试证书生成失败"
+chmod 600 "$WSS_WORK_DIR/server.key.pem"
+WSS_COMPOSE_FILE="$ROOT_DIR/docker-compose.controlled-wss.yaml"
+compose up -d --no-build rustdesk-hbbs rustdesk-hbbr
+wait_healthy rustdesk-hbbs
+wait_healthy rustdesk-hbbr
+python3 "$ROOT_DIR/scripts/deploy/controlled-wss-protocol-acceptance.py" \
+    "$(compose ps -q rustdesk-hbbs)" "$(compose ps -q rustdesk-hbbr)" "$WSS_WORK_DIR/server.fullchain.pem"
+compose stop rustdesk-api-server-pro
+python3 "$ROOT_DIR/scripts/deploy/controlled-wss-protocol-acceptance.py" \
+    "$(compose ps -q rustdesk-hbbs)" "$(compose ps -q rustdesk-hbbr)" "$WSS_WORK_DIR/server.fullchain.pem" --api-unavailable
+compose up -d --no-build rustdesk-api-server-pro
+wait_healthy rustdesk-api-server-pro
+python3 "$ROOT_DIR/scripts/deploy/controlled-wss-protocol-acceptance.py" \
+    "$(compose ps -q rustdesk-hbbs)" "$(compose ps -q rustdesk-hbbr)" "$WSS_WORK_DIR/server.fullchain.pem"
+printf 'PASS: 原生 WSS 三容器在线准入、API 故障及恢复通过，无宿主端口发布\n'

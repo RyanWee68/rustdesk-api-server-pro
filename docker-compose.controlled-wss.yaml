@@ -1,0 +1,25 @@
+services:
+  rustdesk-hbbs:
+    command: ["hbbs", "--require-wss"]
+    environment:
+      - "WSS_CERT_FILE=/tls/${WSS_CERT_NAME:-server.fullchain.pem}"
+      - "WSS_KEY_FILE=/tls/${WSS_KEY_NAME:-server.key.pem}"
+    volumes:
+      - type: bind
+        source: ${WSS_TLS_DIR:?set absolute certificate directory}
+        target: /tls
+        read_only: true
+        bind:
+          create_host_path: false
+  rustdesk-hbbr:
+    command: ["hbbr", "--require-wss"]
+    environment:
+      - "WSS_CERT_FILE=/tls/${WSS_CERT_NAME:-server.fullchain.pem}"
+      - "WSS_KEY_FILE=/tls/${WSS_KEY_NAME:-server.key.pem}"
+    volumes:
+      - type: bind
+        source: ${WSS_TLS_DIR:?set absolute certificate directory}
+        target: /tls
+        read_only: true
+        bind:
+          create_host_path: false

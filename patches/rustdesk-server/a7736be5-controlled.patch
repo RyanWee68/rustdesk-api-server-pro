@@ -1,5 +1,5 @@
 diff --git a/Cargo.lock b/Cargo.lock
-index 7c76b2b..667810b 100644
+index 7c76b2b..41280c1 100644
 --- a/Cargo.lock
 +++ b/Cargo.lock
 @@ -1681,6 +1681,7 @@ dependencies = [
@@ -10,16 +10,23 @@ index 7c76b2b..667810b 100644
   "async-speed-limit",
   "async-trait",
   "axum",
-@@ -1712,6 +1713,7 @@ dependencies = [
+@@ -1707,11 +1708,14 @@ dependencies = [
+  "regex",
+  "reqwest",
+  "rust-ini",
++ "rustls-pemfile",
+  "serde",
+  "serde_derive",
   "serde_json",
   "sodiumoxide",
   "sqlx",
 + "tokio",
++ "tokio-rustls 0.26.1",
   "tokio-tungstenite 0.17.1",
   "tower-http",
   "tungstenite 0.17.2",
 diff --git a/Cargo.toml b/Cargo.toml
-index 43963d1..15aa308 100644
+index 43963d1..801e3ed 100644
 --- a/Cargo.toml
 +++ b/Cargo.toml
 @@ -17,6 +17,7 @@ path = "src/utils.rs"
@@ -30,7 +37,16 @@ index 43963d1..15aa308 100644
  hbb_common = { path = "libs/hbb_common" }
  serde_derive = "1.0"
  serde = "1.0"
-@@ -63,6 +64,9 @@ reqwest = { git = "https://github.com/rustdesk-org/reqwest", features = ["blocki
+@@ -42,6 +43,8 @@ headers = "0.3"
+ once_cell = "1.8"
+ sodiumoxide = "0.2"
+ tokio-tungstenite = "0.17"
++tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
++rustls-pemfile = "1"
+ tungstenite = "0.17"
+ regex = "1.4"
+ tower-http = { version = "0.3", features = ["fs", "trace", "cors"] }
+@@ -63,6 +66,9 @@ reqwest = { git = "https://github.com/rustdesk-org/reqwest", features = ["blocki
  [build-dependencies]
  hbb_common = { path = "libs/hbb_common" }
  
@@ -527,18 +543,391 @@ index 0000000..40eee68
 +        assert!(requests[1].contains("\"peer_ip\":\"192.0.2.10\""));
 +    }
 +}
+diff --git a/src/controlled_ws.rs b/src/controlled_ws.rs
+new file mode 100644
+index 0000000..42e70a3
+--- /dev/null
++++ b/src/controlled_ws.rs
+@@ -0,0 +1,358 @@
++use anyhow::{bail, Context, Result};
++use hbb_common::tokio::{
++    io::{AsyncRead, AsyncWrite},
++    net::TcpStream,
++    time::{timeout, Duration},
++};
++use once_cell::sync::OnceCell;
++use std::{ffi::OsString, fs, io::Cursor, path::Path, sync::Arc};
++use tokio_rustls::{
++    rustls::{
++        self,
++        pki_types::{CertificateDer, PrivateKeyDer},
++    },
++    TlsAcceptor,
++};
++
++pub(crate) trait Transport: AsyncRead + AsyncWrite + Unpin + Send + Sync {}
++impl<T: AsyncRead + AsyncWrite + Unpin + Send + Sync> Transport for T {}
++pub(crate) type WsTransport = Box<dyn Transport>;
++static TLS: OnceCell<Option<TlsAcceptor>> = OnceCell::new();
++
++/// init 在打开监听前验证 WSS 证书，配置错误时禁止降级启动。
++pub(crate) fn init() -> Result<()> {
++    let tls = TLS.get_or_try_init(|| {
++        let nonempty = |name| std::env::var_os(name).filter(|value| !value.is_empty());
++        load(nonempty("WSS_CERT_FILE"), nonempty("WSS_KEY_FILE"))
++    })?;
++    if std::env::args().any(|argument| argument == "--require-wss") && tls.is_none() {
++        bail!("ERR-239F 已要求原生 WSS，但未配置证书和私钥");
++    }
++    Ok(())
++}
++
++/// read_file 拒绝链接和权限过宽的私钥，不在错误中输出文件内容。
++fn read_file(path: &Path, private: bool) -> Result<Vec<u8>> {
++    let metadata = fs::symlink_metadata(path).context("ERR-239F 无法读取 WSS 文件属性")?;
++    if !path.is_absolute() || !metadata.is_file() || metadata.file_type().is_symlink() {
++        bail!("ERR-239F WSS 文件必须是绝对路径的普通文件且不能是符号链接");
++    }
++    #[cfg(unix)]
++    {
++        use std::os::unix::fs::PermissionsExt;
++        if fs::canonicalize(path).context("ERR-239F 无法解析 WSS 文件路径")? != path {
++            bail!("ERR-239F WSS 文件路径不能经过符号链接或包含非规范路径");
++        }
++        if private && metadata.permissions().mode() & 0o077 != 0 {
++            bail!("ERR-239F WSS 私钥不能允许组或其他用户访问");
++        }
++    }
++    #[cfg(not(unix))]
++    let _ = private;
++    if metadata.len() == 0 || metadata.len() > 1024 * 1024 {
++        bail!("ERR-239F WSS 文件为空或超过大小限制");
++    }
++    fs::read(path).context("ERR-239F 无法读取 WSS 文件")
++}
++
++/// load 只在显式提供完整证书对时启用 TLS，未配置时保持 WSS 禁用。
++fn load(cert: Option<OsString>, key: Option<OsString>) -> Result<Option<TlsAcceptor>> {
++    let (cert, key) = match (cert, key) {
++        (None, None) => return Ok(None),
++        (Some(cert), Some(key)) => (cert, key),
++        _ => bail!("ERR-239F WSS_CERT_FILE 和 WSS_KEY_FILE 必须同时设置"),
++    };
++    if fs::canonicalize(&cert).context("ERR-239F WSS 证书不存在")?
++        == fs::canonicalize(&key).context("ERR-239F WSS 私钥不存在")?
++    {
++        bail!("ERR-239F WSS 证书和私钥不能使用同一文件");
++    }
++    let cert = read_file(Path::new(&cert), false)?;
++    let key = read_file(Path::new(&key), true)?;
++    let certs = rustls_pemfile::certs(&mut Cursor::new(cert))
++        .context("ERR-239F WSS 证书 PEM 无效")?
++        .into_iter()
++        .map(CertificateDer::from)
++        .collect();
++    let mut keys = Vec::new();
++    for item in
++        rustls_pemfile::read_all(&mut Cursor::new(key)).context("ERR-239F WSS 私钥 PEM 无效")?
++    {
++        let key: PrivateKeyDer<'static> = match item {
++            rustls_pemfile::Item::RSAKey(key) => {
++                rustls::pki_types::PrivatePkcs1KeyDer::from(key).into()
++            }
++            rustls_pemfile::Item::PKCS8Key(key) => {
++                rustls::pki_types::PrivatePkcs8KeyDer::from(key).into()
++            }
++            rustls_pemfile::Item::ECKey(key) => {
++                rustls::pki_types::PrivateSec1KeyDer::from(key).into()
++            }
++            _ => continue,
++        };
++        keys.push(key);
++    }
++    if keys.len() != 1 {
++        bail!("ERR-239F WSS 私钥文件必须恰好包含一个私钥");
++    }
++    let mut config = rustls::ServerConfig::builder_with_provider(Arc::new(
++        rustls::crypto::ring::default_provider(),
++    ))
++    .with_safe_default_protocol_versions()
++    .context("ERR-239F WSS TLS 协议配置无效")?
++    .with_no_client_auth()
++    .with_single_cert(certs, keys.remove(0))
++    .context("ERR-239F WSS 证书或私钥无效或不匹配")?;
++    config.alpn_protocols = vec![b"http/1.1".to_vec()];
++    Ok(Some(TlsAcceptor::from(Arc::new(config))))
++}
++
++/// accept 只返回本进程实际完成 TLS 握手的连接，不读取代理头。
++pub(crate) async fn accept(stream: TcpStream) -> Result<WsTransport> {
++    init()?;
++    accept_with(stream, TLS.get().and_then(Option::as_ref)).await
++}
++
++/// accept_with 限制握手时间，握手失败时不回退为明文。
++async fn accept_with(stream: TcpStream, tls: Option<&TlsAcceptor>) -> Result<WsTransport> {
++    let tls = tls.context("ERR-239F WSS 未配置证书，拒绝 WebSocket 连接")?;
++    let stream = timeout(Duration::from_secs(5), tls.accept(stream))
++        .await
++        .context("ERR-239F WSS TLS 握手超时")?
++        .context("ERR-239F WSS TLS 握手失败")?;
++    Ok(Box::new(stream))
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use hbb_common::{
++        futures_util::{SinkExt, StreamExt},
++        tokio::{io::AsyncWriteExt, net::TcpListener},
++    };
++    use std::{
++        path::PathBuf,
++        process::Command,
++        sync::atomic::{AtomicUsize, Ordering},
++    };
++    use tokio_rustls::{rustls::pki_types::ServerName, TlsConnector};
++
++    static SEQUENCE: AtomicUsize = AtomicUsize::new(0);
++
++    struct Fixture(PathBuf);
++    impl Fixture {
++        /// new 在系统临时目录生成一次性测试证书，不读取部署证书。
++        fn new() -> Self {
++            let path = std::env::temp_dir().join(format!(
++                "controlled-wss-{}-{}",
++                std::process::id(),
++                SEQUENCE.fetch_add(1, Ordering::Relaxed)
++            ));
++            fs::create_dir(&path).unwrap();
++            let fixture = Self(fs::canonicalize(path).unwrap());
++            let result = Command::new("openssl")
++                .args([
++                    "req",
++                    "-x509",
++                    "-newkey",
++                    "rsa:2048",
++                    "-nodes",
++                    "-days",
++                    "1",
++                    "-subj",
++                    "/CN=localhost",
++                    "-addext",
++                    "subjectAltName=DNS:localhost",
++                    "-addext",
++                    "basicConstraints=critical,CA:FALSE",
++                    "-keyout",
++                    "key.pem",
++                    "-out",
++                    "cert.pem",
++                ])
++                .current_dir(&fixture.0)
++                .output()
++                .expect("ERR-239F 测试需要 openssl");
++            assert!(result.status.success(), "ERR-239F 测试证书生成失败");
++            #[cfg(unix)]
++            {
++                use std::os::unix::fs::PermissionsExt;
++                fs::set_permissions(fixture.0.join("key.pem"), fs::Permissions::from_mode(0o600))
++                    .unwrap();
++            }
++            fixture
++        }
++
++        /// tls 加载当前夹具的证书对。
++        fn tls(&self) -> TlsAcceptor {
++            load(
++                Some(self.0.join("cert.pem").into_os_string()),
++                Some(self.0.join("key.pem").into_os_string()),
++            )
++            .unwrap()
++            .unwrap()
++        }
++
++        /// connector 根据测试选择显式信任或不信任临时证书。
++        fn connector(&self, trusted: bool) -> TlsConnector {
++            let mut roots = rustls::RootCertStore::empty();
++            if trusted {
++                for cert in rustls_pemfile::certs(&mut Cursor::new(
++                    fs::read(self.0.join("cert.pem")).unwrap(),
++                ))
++                .unwrap()
++                {
++                    roots.add(CertificateDer::from(cert)).unwrap();
++                }
++            }
++            let config = rustls::ClientConfig::builder_with_provider(Arc::new(
++                rustls::crypto::ring::default_provider(),
++            ))
++            .with_safe_default_protocol_versions()
++            .unwrap()
++            .with_root_certificates(roots)
++            .with_no_client_auth();
++            TlsConnector::from(Arc::new(config))
++        }
++    }
++    impl Drop for Fixture {
++        fn drop(&mut self) {
++            let _ = fs::remove_dir_all(&self.0);
++        }
++    }
++
++    #[test]
++    fn missing_and_malformed_configuration_is_rejected() {
++        assert!(load(None, None).unwrap().is_none());
++        assert!(load(Some("/missing".into()), None).is_err());
++        assert!(load(None, Some("/missing".into())).is_err());
++        let fixture = Fixture::new();
++        let cert = fixture.0.join("cert.pem").into_os_string();
++        let key = fixture.0.join("key.pem").into_os_string();
++        assert!(load(Some(cert.clone()), Some(cert.clone())).is_err());
++        fs::write(&key, b"not a key").unwrap();
++        assert!(load(Some(cert), Some(key)).is_err());
++    }
++
++    #[test]
++    fn mismatched_key_is_rejected() {
++        let first = Fixture::new();
++        let second = Fixture::new();
++        assert!(load(
++            Some(first.0.join("cert.pem").into_os_string()),
++            Some(second.0.join("key.pem").into_os_string())
++        )
++        .is_err());
++    }
++
++    #[cfg(unix)]
++    #[test]
++    fn permissive_key_and_symlink_are_rejected() {
++        use std::os::unix::fs::{symlink, PermissionsExt};
++        let fixture = Fixture::new();
++        let key = fixture.0.join("key.pem");
++        fs::set_permissions(&key, fs::Permissions::from_mode(0o644)).unwrap();
++        assert!(read_file(&key, true).is_err());
++        symlink(fixture.0.join("cert.pem"), fixture.0.join("linked.pem")).unwrap();
++        assert!(read_file(&fixture.0.join("linked.pem"), false).is_err());
++        symlink(&fixture.0, fixture.0.join("linked-dir")).unwrap();
++        assert!(read_file(&fixture.0.join("linked-dir/cert.pem"), false).is_err());
++    }
++
++    #[tokio::test]
++    async fn trusted_tls_websocket_roundtrip() {
++        let fixture = Fixture::new();
++        let tls = fixture.tls();
++        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
++        let address = listener.local_addr().unwrap();
++        let server = tokio::spawn(async move {
++            let (stream, _) = listener.accept().await.unwrap();
++            let stream = accept_with(stream, Some(&tls)).await.unwrap();
++            let mut websocket = tokio_tungstenite::accept_async(stream).await.unwrap();
++            let message = websocket.next().await.unwrap().unwrap();
++            assert_eq!(
++                message,
++                tungstenite::Message::Binary(b"test-payload".to_vec())
++            );
++            websocket.send(message).await.unwrap();
++        });
++        let stream = TcpStream::connect(address).await.unwrap();
++        let stream = fixture
++            .connector(true)
++            .connect(ServerName::try_from("localhost").unwrap(), stream)
++            .await
++            .unwrap();
++        let (mut websocket, _) = tokio_tungstenite::client_async("wss://localhost/", stream)
++            .await
++            .unwrap();
++        websocket
++            .send(tungstenite::Message::Binary(b"test-payload".to_vec()))
++            .await
++            .unwrap();
++        assert_eq!(
++            websocket.next().await.unwrap().unwrap(),
++            tungstenite::Message::Binary(b"test-payload".to_vec())
++        );
++        server.await.unwrap();
++    }
++
++    #[tokio::test]
++    async fn bad_server_identity_is_rejected() {
++        let fixture = Fixture::new();
++        for (trusted, hostname) in [(false, "localhost"), (true, "wrong.invalid")] {
++            let tls = fixture.tls();
++            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
++            let address = listener.local_addr().unwrap();
++            let server = tokio::spawn(async move {
++                let (stream, _) = listener.accept().await.unwrap();
++                assert!(accept_with(stream, Some(&tls)).await.is_err());
++            });
++            let stream = TcpStream::connect(address).await.unwrap();
++            assert!(fixture
++                .connector(trusted)
++                .connect(ServerName::try_from(hostname).unwrap(), stream)
++                .await
++                .is_err());
++            server.await.unwrap();
++        }
++    }
++
++    #[tokio::test]
++    async fn plaintext_and_disabled_wss_are_rejected() {
++        let fixture = Fixture::new();
++        for enabled in [false, true] {
++            let tls = fixture.tls();
++            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
++            let address = listener.local_addr().unwrap();
++            let server = tokio::spawn(async move {
++                let (stream, _) = listener.accept().await.unwrap();
++                assert!(accept_with(stream, if enabled { Some(&tls) } else { None })
++                    .await
++                    .is_err());
++            });
++            let mut stream = TcpStream::connect(address).await.unwrap();
++            let _ = stream
++                .write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")
++                .await;
++            server.await.unwrap();
++        }
++    }
++
++    #[tokio::test]
++    async fn stalled_tls_handshake_times_out() {
++        let fixture = Fixture::new();
++        let tls = fixture.tls();
++        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
++        let address = listener.local_addr().unwrap();
++        let server = tokio::spawn(async move {
++            let (stream, _) = listener.accept().await.unwrap();
++            let error = accept_with(stream, Some(&tls)).await.err().unwrap();
++            assert!(error.to_string().contains("ERR-239F WSS TLS 握手超时"));
++        });
++        let _stream = TcpStream::connect(address).await.unwrap();
++        timeout(Duration::from_secs(8), server)
++            .await
++            .unwrap()
++            .unwrap();
++    }
++}
 diff --git a/src/hbbr.rs b/src/hbbr.rs
-index e6763fa..fcee173 100644
+index e6763fa..9fec3d1 100644
 --- a/src/hbbr.rs
 +++ b/src/hbbr.rs
-@@ -1,5 +1,6 @@
+@@ -1,5 +1,7 @@
  use clap::App;
  mod common;
 +mod controlled_admission;
++mod controlled_ws;
  mod relay_server;
  use flexi_logger::*;
  use hbb_common::{config::RELAY_PORT, ResultType};
-@@ -29,6 +30,7 @@ fn main() -> ResultType<()> {
+@@ -14,6 +16,7 @@ fn main() -> ResultType<()> {
+         .start()?;
+     let args = format!(
+         "-b, --bind=[IP] 'Sets the IP address to bind to (default: all interfaces)'
++        --require-wss '缺少有效原生 WSS 证书时拒绝启动'
+         -p, --port=[NUMBER(default={RELAY_PORT})] 'Sets the listening port'
+         -k, --key=[KEY] 'Only allow the client with the same key'
+         ",
+@@ -29,6 +32,7 @@ fn main() -> ResultType<()> {
              section.iter().for_each(|(k, v)| common::set_arg(k, v));
          }
      }
@@ -547,22 +936,31 @@ index e6763fa..fcee173 100644
      if let Some(v) = common::get_arg_opt("PORT") {
          let v: i32 = v.parse().unwrap_or_default();
 diff --git a/src/lib.rs b/src/lib.rs
-index 8da29a2..3926a16 100644
+index 8da29a2..4b6537c 100644
 --- a/src/lib.rs
 +++ b/src/lib.rs
-@@ -1,6 +1,7 @@
+@@ -1,6 +1,8 @@
  mod rendezvous_server;
  pub use rendezvous_server::*;
  pub mod common;
 +pub mod controlled_admission;
++mod controlled_ws;
  mod database;
  mod peer;
  mod version;
 diff --git a/src/main.rs b/src/main.rs
-index d422c3c..0089805 100644
+index d422c3c..87f9c59 100644
 --- a/src/main.rs
 +++ b/src/main.rs
-@@ -26,6 +26,7 @@ fn main() -> ResultType<()> {
+@@ -16,6 +16,7 @@ fn main() -> ResultType<()> {
+     let args = format!(
+         "-c --config=[FILE] +takes_value 'Sets a custom config file'
+         -b, --bind=[IP] 'Sets the IP address to bind to (default: all interfaces)'
++        --require-wss '缺少有效原生 WSS 证书时拒绝启动'
+         -p, --port=[NUMBER(default={RENDEZVOUS_PORT})] 'Sets the listening port'
+         -s, --serial=[NUMBER(default=0)] '[DEPRECATED] Sets configure update serial number'
+         -R, --rendezvous-servers=[HOSTS] '[DEPRECATED] Sets rendezvous servers, separated by comma'
+@@ -26,6 +27,7 @@ fn main() -> ResultType<()> {
          -k, --key=[KEY] 'Only allow the client with the same key'",
      );
      init_args(&args, "hbbs", "RustDesk ID/Rendezvous Server");
@@ -609,7 +1007,7 @@ index 0f218df..992ac58 100644
 +    }
 +}
 diff --git a/src/relay_server.rs b/src/relay_server.rs
-index de1a7ea..f9513bb 100644
+index de1a7ea..0b9d5b3 100644
 --- a/src/relay_server.rs
 +++ b/src/relay_server.rs
 @@ -1,5 +1,6 @@
@@ -635,11 +1033,12 @@ index de1a7ea..f9513bb 100644
  
  #[tokio::main(flavor = "multi_thread")]
  pub async fn start_with_bind(
-@@ -51,6 +54,12 @@ pub async fn start_with_bind(
+@@ -51,6 +54,13 @@ pub async fn start_with_bind(
      port: &str,
      key: &str,
  ) -> ResultType<()> {
 +    let config = ControlledAdmissionConfig::from_env()?;
++    crate::controlled_ws::init()?;
 +    if !config.must_login {
 +        bail!("ERR-239B MUST_LOGIN=1 is required for controlled hbbr");
 +    }
@@ -648,7 +1047,7 @@ index de1a7ea..f9513bb 100644
      let key = get_server_sk(key);
      if let Ok(mut file) = std::fs::File::open(BLACKLIST_FILE) {
          let mut contents = String::new();
-@@ -419,35 +428,15 @@ async fn handle_connection(
+@@ -419,38 +429,19 @@ async fn handle_connection(
  
  async fn make_pair(
      stream: TcpStream,
@@ -659,6 +1058,7 @@ index de1a7ea..f9513bb 100644
      ws: bool,
  ) -> ResultType<()> {
      if ws {
++        let stream = crate::controlled_ws::accept(stream).await?;
          use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
 -        let callback = |req: &Request, response: Response| {
 -            let headers = req.headers();
@@ -686,8 +1086,12 @@ index de1a7ea..f9513bb 100644
 +            // 尚无可信代理身份，来源地址只能取 TCP 对端。
              Ok(response)
          };
-         let ws_stream = tokio_tungstenite::accept_hdr_async(stream, callback).await?;
-@@ -468,6 +457,18 @@ async fn make_pair_(stream: impl StreamTrait, addr: SocketAddr, key: &str, limit
+-        let ws_stream = tokio_tungstenite::accept_hdr_async(stream, callback).await?;
++        let ws_stream = timeout(5_000, tokio_tungstenite::accept_hdr_async(stream, callback)).await??;
+         make_pair_(ws_stream, addr, key, limiter).await;
+     } else {
+         make_pair_(FramedStream::from(stream, addr), addr, key, limiter).await;
+@@ -468,6 +459,18 @@ async fn make_pair_(stream: impl StreamTrait, addr: SocketAddr, key: &str, limit
                      return;
                  }
                  if !rf.uuid.is_empty() {
@@ -706,7 +1110,7 @@ index de1a7ea..f9513bb 100644
                      let mut peer = PEERS.lock().await.remove(&rf.uuid);
                      if let Some(peer) = peer.as_mut() {
                          log::info!("Relayrequest {} from {} got paired", rf.uuid, addr);
-@@ -615,10 +616,6 @@ fn get_server_sk(key: &str) -> String {
+@@ -615,10 +618,6 @@ fn get_server_sk(key: &str) -> String {
          key = pk;
      }
  
@@ -717,8 +1121,17 @@ index de1a7ea..f9513bb 100644
      key
  }
  
+@@ -650,7 +649,7 @@ impl StreamTrait for FramedStream {
+ }
+
+ #[async_trait]
+-impl StreamTrait for tokio_tungstenite::WebSocketStream<TcpStream> {
++impl StreamTrait for tokio_tungstenite::WebSocketStream<crate::controlled_ws::WsTransport> {
+     async fn recv(&mut self) -> Option<Result<BytesMut, Error>> {
+         if let Some(msg) = self.next().await {
+             match msg {
 diff --git a/src/rendezvous_server.rs b/src/rendezvous_server.rs
-index eaf7190..33d6dbc 100644
+index eaf7190..54d31bb 100644
 --- a/src/rendezvous_server.rs
 +++ b/src/rendezvous_server.rs
 @@ -1,4 +1,5 @@
@@ -745,9 +1158,12 @@ index eaf7190..33d6dbc 100644
  use std::{
      collections::HashMap,
      net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
-@@ -51,7 +52,7 @@ const REG_TIMEOUT: i64 = 30_000;
+@@ -49,9 +50,9 @@ enum Data {
+
+ const REG_TIMEOUT: i64 = 30_000;
  type TcpStreamSink = SplitSink<Framed<TcpStream, BytesCodec>, Bytes>;
- type WsSink = SplitSink<tokio_tungstenite::WebSocketStream<TcpStream>, tungstenite::Message>;
+-type WsSink = SplitSink<tokio_tungstenite::WebSocketStream<TcpStream>, tungstenite::Message>;
++type WsSink = SplitSink<tokio_tungstenite::WebSocketStream<crate::controlled_ws::WsTransport>, tungstenite::Message>;
  enum Sink {
 -    TcpStream(TcpStreamSink),
 +    TcpStream(TcpStreamSink, Option<Encrypt>),
@@ -796,11 +1212,12 @@ index eaf7190..33d6dbc 100644
      pm: PeerMap,
      tx: Sender,
      relay_servers: Arc<RelayServers>,
-@@ -111,7 +137,15 @@ impl RendezvousServer {
+@@ -111,7 +137,16 @@ impl RendezvousServer {
          key: &str,
          rmem: usize,
      ) -> ResultType<()> {
 +        let config = ControlledAdmissionConfig::from_env()?;
++        crate::controlled_ws::init()?;
 +        if !config.must_login {
 +            bail!("ERR-239B MUST_LOGIN=1 is required for controlled hbbs");
 +        }
@@ -812,7 +1229,7 @@ index eaf7190..33d6dbc 100644
          let nat_port = port - 1;
          let ws_port = port + 2;
          let pm = PeerMap::new().await?;
-@@ -136,7 +170,9 @@ impl RendezvousServer {
+@@ -136,7 +171,9 @@ impl RendezvousServer {
              )
          };
          let mut rs = Self {
@@ -822,7 +1239,7 @@ index eaf7190..33d6dbc 100644
              pm,
              tx: tx.clone(),
              relay_servers: Default::default(),
-@@ -353,10 +389,14 @@ impl RendezvousServer {
+@@ -353,10 +390,14 @@ impl RendezvousServer {
          if let Ok(msg_in) = RendezvousMessage::parse_from_bytes(bytes) {
              match msg_in.union {
                  Some(rendezvous_message::Union::RegisterPeer(rp)) => {
@@ -840,7 +1257,7 @@ index eaf7190..33d6dbc 100644
                          if self.inner.serial > rp.serial {
                              let mut msg_out = RendezvousMessage::new();
                              msg_out.set_configure_update(ConfigUpdate {
-@@ -379,6 +419,24 @@ impl RendezvousServer {
+@@ -379,6 +420,24 @@ impl RendezvousServer {
                      } else if !self.check_ip_blocker(&ip, &id).await {
                          return send_rk_res(socket, addr, TOO_FREQUENT).await;
                      }
@@ -865,7 +1282,7 @@ index eaf7190..33d6dbc 100644
                      let peer = self.pm.get_or(&id).await;
                      let (changed, ip_changed) = {
                          let peer = peer.read().await;
-@@ -445,6 +503,8 @@ impl RendezvousServer {
+@@ -445,6 +504,8 @@ impl RendezvousServer {
                      }
                      if changed {
                          self.pm.update_pk(id, peer, addr, rk.uuid, rk.pk, ip).await;
@@ -874,7 +1291,7 @@ index eaf7190..33d6dbc 100644
                      }
                      let mut msg_out = RendezvousMessage::new();
                      msg_out.set_register_pk_response(RegisterPkResponse {
-@@ -508,10 +568,39 @@ impl RendezvousServer {
+@@ -508,10 +569,39 @@ impl RendezvousServer {
          addr: SocketAddr,
          key: &str,
          ws: bool,
@@ -914,7 +1331,7 @@ index eaf7190..33d6dbc 100644
                      // there maybe several attempt, so sink can be none
                      if let Some(sink) = sink.take() {
                          self.tcp_punch.lock().await.insert(try_into_v4(addr), sink);
-@@ -520,15 +609,28 @@ impl RendezvousServer {
+@@ -520,15 +610,28 @@ impl RendezvousServer {
                      return true;
                  }
                  Some(rendezvous_message::Union::RequestRelay(mut rf)) => {
@@ -948,7 +1365,7 @@ index eaf7190..33d6dbc 100644
                          self.tx.send(Data::Msg(msg_out.into(), peer_addr)).ok();
                      }
                      return true;
-@@ -537,6 +639,28 @@ impl RendezvousServer {
+@@ -537,6 +640,28 @@ impl RendezvousServer {
                      let addr_b = AddrMangle::decode(&rr.socket_addr);
                      rr.socket_addr = Default::default();
                      let id = rr.id();
@@ -977,7 +1394,7 @@ index eaf7190..33d6dbc 100644
                      if !id.is_empty() {
                          let pk = self.get_pk(&rr.version, id.to_owned()).await;
                          rr.set_pk(pk);
-@@ -589,6 +713,15 @@ impl RendezvousServer {
+@@ -589,6 +714,15 @@ impl RendezvousServer {
          false
      }
  
@@ -993,7 +1410,7 @@ index eaf7190..33d6dbc 100644
      #[inline]
      async fn update_addr(
          &mut self,
-@@ -737,6 +870,37 @@ impl RendezvousServer {
+@@ -737,6 +871,37 @@ impl RendezvousServer {
                  return Ok((msg_out, None));
              }
              
@@ -1031,7 +1448,7 @@ index eaf7190..33d6dbc 100644
              // record punch hole request (from addr -> peer id/peer_addr)
              {
                  let from_ip = try_into_v4(addr).ip().to_string();
-@@ -852,7 +1016,11 @@ impl RendezvousServer {
+@@ -852,7 +1017,11 @@ impl RendezvousServer {
          if let Some(sink) = sink.as_mut() {
              if let Ok(bytes) = msg.write_to_bytes() {
                  match sink {
@@ -1044,7 +1461,7 @@ index eaf7190..33d6dbc 100644
                          allow_err!(s.send(Bytes::from(bytes)).await);
                      }
                      Sink::Ws(ws) => {
-@@ -1169,39 +1337,41 @@ impl RendezvousServer {
+@@ -1169,56 +1338,84 @@ impl RendezvousServer {
          });
      }
  
@@ -1081,6 +1498,7 @@ index eaf7190..33d6dbc 100644
      ) -> ResultType<()> {
          let mut sink;
          if ws {
++            let stream = crate::controlled_ws::accept(stream).await?;
              use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
 -            let callback = |req: &Request, response: Response| {
 -                let headers = req.headers();
@@ -1108,13 +1526,14 @@ index eaf7190..33d6dbc 100644
 +                // 尚无可信代理身份，来源地址只能取 TCP 对端。
                  Ok(response)
              };
-             let ws_stream = tokio_tungstenite::accept_hdr_async(stream, callback).await?;
-@@ -1209,16 +1379,41 @@ impl RendezvousServer {
+-            let ws_stream = tokio_tungstenite::accept_hdr_async(stream, callback).await?;
++            let ws_stream = timeout(5_000, tokio_tungstenite::accept_hdr_async(stream, callback)).await??;
+             let (a, mut b) = ws_stream.split();
              sink = Some(Sink::Ws(a));
              while let Ok(Some(Ok(msg))) = timeout(30_000, b.next()).await {
                  if let tungstenite::Message::Binary(bytes) = msg {
 -                    if !self.handle_tcp(&bytes, &mut sink, addr, key, ws).await {
-+                    if !self.handle_tcp(&bytes, &mut sink, addr, key, ws, false).await {
++                    if !self.handle_tcp(&bytes, &mut sink, addr, key, ws, true).await {
                          break;
                      }
                  }
@@ -1156,7 +1575,7 @@ index eaf7190..33d6dbc 100644
                      break;
                  }
              }
-@@ -1277,9 +1472,6 @@ impl RendezvousServer {
+@@ -1277,9 +1474,6 @@ impl RendezvousServer {
              }
          }
  
@@ -1166,7 +1585,7 @@ index eaf7190..33d6dbc 100644
          (key, out_sk)
      }
  
-@@ -1412,6 +1604,107 @@ async fn create_tcp_listener(bind_addr: Option<IpAddr>, port: i32) -> ResultType
+@@ -1412,6 +1606,107 @@ async fn create_tcp_listener(bind_addr: Option<IpAddr>, port: i32) -> ResultType
  mod tests {
      use super::*;
  

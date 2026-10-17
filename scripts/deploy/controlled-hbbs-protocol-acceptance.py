@@ -253,26 +253,23 @@ def acceptance(container, unavailable):
     print("PASS: 打洞、中继和健康检查三类明文令牌请求均拒绝且日志不泄漏令牌")
 
     def websocket(extra_headers=b""):
-        """使用标准握手和掩码帧验证 WebSocket 明文令牌不能绕过。"""
+        """未配置 WSS 时，标准握手和携令牌帧必须在升级前被拒绝。"""
         with socket.create_connection((address, 21118), timeout=7) as stream:
             key = base64.b64encode(secrets.token_bytes(16))
-            stream.sendall(b"GET / HTTP/1.1\r\nHost: isolated\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: " + key + b"\r\n" + extra_headers + b"\r\n")
-            headers = bytearray()
-            while not headers.endswith(b"\r\n\r\n"):
-                require(len(headers) < 4096, "WebSocket 响应头过大")
-                headers.extend(receive(stream, 1))
-            accept = base64.b64encode(hashlib.sha1(key + b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11").digest())
-            require(headers.startswith(b"HTTP/1.1 101 ") and accept.lower() in headers.lower(), "WebSocket 握手失败")
             mask = secrets.token_bytes(4)
             require(len(request) < 126, "WebSocket 探针帧过大")
-            stream.sendall(bytes([0x82, 0x80 | len(request)]) + mask + bytes(item ^ mask[i % 4] for i, item in enumerate(request)))
-            reply = stream.recv(2)
-            require(not reply or reply[0] & 15 == 8, "WebSocket 明文令牌未被关闭")
+            upgrade = b"GET / HTTP/1.1\r\nHost: isolated\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: " + key + b"\r\n" + extra_headers + b"\r\n"
+            frame = bytes([0x82, 0x80 | len(request)]) + mask + bytes(item ^ mask[i % 4] for i, item in enumerate(request))
+            try:
+                stream.sendall(upgrade + frame)
+                require(stream.recv(2) == b"", "未启用 WSS 时仍返回 WebSocket 响应")
+            except ConnectionResetError:
+                pass
 
-    observed(websocket, "ERR-239E 拒绝携带令牌的明文 TCP 请求")
+    observed(websocket, "ERR-239F WSS 未配置证书")
     for header in (b"X-Real-IP: 192.0.2.10\r\n", b"X-Forwarded-For: 192.0.2.10\r\n"):
-        observed(lambda: websocket(header), "ERR-239E 拒绝携带令牌的明文 TCP 请求")
-    print("PASS: WebSocket 明文令牌和伪造来源头均拒绝，不作为官方 WebSocket 兼容性通过")
+        observed(lambda: websocket(header), "ERR-239F WSS 未配置证书")
+    print("PASS: 未配置 WSS 时明文 WebSocket 与伪造来源头均在升级前拒绝")
 
     def registration():
         """独立随机设备注册仅写入将随隔离卷清理的待审批记录。"""
