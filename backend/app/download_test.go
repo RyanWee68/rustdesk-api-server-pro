@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"rustdesk-api-server-pro/internal/errcode"
@@ -73,6 +74,23 @@ func TestPublicDownloadsRequireChecksums(t *testing.T) {
 		}
 		if _, err := hex.DecodeString(download.sha256); err != nil {
 			t.Fatalf("download %s checksum is invalid: %v", routePath, err)
+		}
+	}
+}
+
+// TestPublicDownloadMetadataMatchesPage 验证下载页与服务端使用相同文件名和摘要。
+func TestPublicDownloadMetadataMatchesPage(t *testing.T) {
+	page, err := os.ReadFile(filepath.Join("..", "..", "soybean-admin", "src", "views", "about", "downloads", "index.vue"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	contents := strings.ToUpper(strings.ReplaceAll(string(page), ":", ""))
+	for routePath, download := range publicDownloads {
+		if !strings.Contains(contents, strings.ToUpper(download.fileName)) {
+			t.Fatalf("download page is missing file %s", routePath)
+		}
+		if !strings.Contains(contents, strings.ToUpper(download.sha256)) {
+			t.Fatalf("download page checksum differs for %s", routePath)
 		}
 	}
 }
