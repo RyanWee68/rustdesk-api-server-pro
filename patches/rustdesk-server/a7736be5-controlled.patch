@@ -545,10 +545,10 @@ index 0000000..40eee68
 +}
 diff --git a/src/controlled_ws.rs b/src/controlled_ws.rs
 new file mode 100644
-index 0000000..42e70a3
+index 0000000..ab0a0aa
 --- /dev/null
 +++ b/src/controlled_ws.rs
-@@ -0,0 +1,358 @@
+@@ -0,0 +1,363 @@
 +use anyhow::{bail, Context, Result};
 +use hbb_common::tokio::{
 +    io::{AsyncRead, AsyncWrite},
@@ -661,7 +661,12 @@ index 0000000..42e70a3
 +/// accept 只返回本进程实际完成 TLS 握手的连接，不读取代理头。
 +pub(crate) async fn accept(stream: TcpStream) -> Result<WsTransport> {
 +    init()?;
-+    accept_with(stream, TLS.get().and_then(Option::as_ref)).await
++    let result = accept_with(stream, TLS.get().and_then(Option::as_ref)).await;
++    if let Err(error) = &result {
++        // 上层通用错误宏只记 debug，安全拒绝必须在默认日志级别可审计。
++        hbb_common::log::warn!("{}", error);
++    }
++    result
 +}
 +
 +/// accept_with 限制握手时间，握手失败时不回退为明文。

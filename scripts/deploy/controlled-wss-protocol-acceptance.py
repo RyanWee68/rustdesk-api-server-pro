@@ -96,7 +96,7 @@ def acceptance(hbbs, hbbr, certificate, unavailable):
                 stream.sendall(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")
                 reply = stream.recv(32)
                 require(not reply or reply[0] == 21, "WSS 端口返回明文应用响应")
-            except ConnectionResetError:
+            except ConnectionError:
                 pass
         for _ in range(50):
             if count(container, "ERR-239F WSS TLS 握手失败") > before:

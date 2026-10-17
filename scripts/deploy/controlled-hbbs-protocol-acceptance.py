@@ -263,7 +263,7 @@ def acceptance(container, unavailable):
             try:
                 stream.sendall(upgrade + frame)
                 require(stream.recv(2) == b"", "未启用 WSS 时仍返回 WebSocket 响应")
-            except ConnectionResetError:
+            except ConnectionError:
                 pass
 
     observed(websocket, "ERR-239F WSS 未配置证书")
