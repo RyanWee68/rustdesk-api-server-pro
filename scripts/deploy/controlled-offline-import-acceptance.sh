@@ -39,6 +39,8 @@ import sys
 from pathlib import Path
 
 root = Path(sys.argv[1])
+if (root / "SHA256SUMS").is_symlink():
+    raise SystemExit("ERR-2397 SHA256SUMS 不能是符号链接")
 entries = {}
 for number, raw in enumerate((root / "SHA256SUMS").read_text(encoding="utf-8").splitlines(), 1):
     match = re.fullmatch(r"([0-9a-f]{64}) [ *]([A-Za-z0-9._-]+)", raw)
@@ -48,6 +50,8 @@ for number, raw in enumerate((root / "SHA256SUMS").read_text(encoding="utf-8").s
     if name in entries:
         raise SystemExit(f"ERR-2397 SHA256SUMS 包含重复文件：{name}")
     path = root / name
+    if path.is_symlink():
+        raise SystemExit(f"ERR-2397 摘要文件不能是符号链接：{name}")
     if not path.is_file():
         raise SystemExit(f"ERR-2397 摘要文件不存在：{name}")
     digest_builder = hashlib.sha256()

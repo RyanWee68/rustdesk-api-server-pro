@@ -88,8 +88,15 @@ configure_tls() {
     [ "$tls_port" -ge 1 ] && [ "$tls_port" -le 65535 ] || fail "TLS_PORT 必须是有效端口"
 
     tls_allowed_dir="${CONTROLLED_TLS_ALLOWED_DIR:-/app/data/tls}"
+    tls_real_dir="$(CDPATH= cd -P -- "$tls_allowed_dir" && pwd -P)" || fail "TLS 目录不存在或无法访问"
+    [ "$tls_real_dir" = "$tls_allowed_dir" ] || fail "TLS 目录必须是规范绝对路径且不能经过符号链接"
     case "$TLS_CERT_FILE" in "$tls_allowed_dir"/*) ;; *) fail "TLS_CERT_FILE 必须位于 $tls_allowed_dir" ;; esac
     case "$TLS_KEY_FILE" in "$tls_allowed_dir"/*) ;; *) fail "TLS_KEY_FILE 必须位于 $tls_allowed_dir" ;; esac
+    for tls_file in "$TLS_CERT_FILE" "$TLS_KEY_FILE"; do
+        case "${tls_file#"$tls_allowed_dir"/}" in
+            ''|.|..|*/*) fail "TLS 文件必须是 tls 目录的直接子文件" ;;
+        esac
+    done
     case "$TLS_CERT_FILE$TLS_KEY_FILE" in *[!A-Za-z0-9_./-]*) fail "TLS 文件路径包含非法字符" ;; esac
     [ "$TLS_CERT_FILE" != "$TLS_KEY_FILE" ] || fail "TLS 证书和私钥不能使用同一文件"
     [ ! -L "$TLS_CERT_FILE" ] && [ -f "$TLS_CERT_FILE" ] && [ -r "$TLS_CERT_FILE" ] || fail "TLS 证书不存在、不可读或为符号链接"

@@ -177,7 +177,36 @@ pass "RustDesk server key 强制轮换保护"
         TLS_KEY_FILE="$tls_dir/server.key.pem" configure_tls "$indent_yaml") >/dev/null 2>&1; then
         fail "TLS 非法文件路径未被拒绝"
     fi
+    cp "$indent_yaml" "$WORK_DIR/tls-config.good"
+    printf 'outside certificate\n' > "$WORK_DIR/outside-cert.pem"
+    printf 'outside private key\n' > "$WORK_DIR/outside-key.pem"
+    chmod 600 "$WORK_DIR/outside-key.pem"
+    mkdir -p "$tls_dir/nested"
+    for tls_field in cert key; do
+        for tls_relative in "../outside-${tls_field}.pem" "nested/../../outside-${tls_field}.pem"; do
+            tls_cert="$tls_dir/server.fullchain.pem"
+            tls_key="$tls_dir/server.key.pem"
+            case "$tls_field" in
+                cert) tls_cert="$tls_dir/$tls_relative" ;;
+                key) tls_key="$tls_dir/$tls_relative" ;;
+            esac
+            if (CONTROLLED_TLS_ALLOWED_DIR="$tls_dir" TLS_PORT=12443 TLS_CERT_FILE="$tls_cert" \
+                TLS_KEY_FILE="$tls_key" configure_tls "$indent_yaml") >"$WORK_DIR/tls-path.log" 2>&1; then
+                fail "TLS 路径穿越未被拒绝：$tls_field"
+            fi
+            grep -q 'ERR-2390.*直接子文件' "$WORK_DIR/tls-path.log" || fail "TLS 路径穿越拒绝缺少明确原因"
+            cmp -s "$indent_yaml" "$WORK_DIR/tls-config.good" || fail "TLS 拒绝路径仍改写了配置"
+        done
+    done
     if [ "$CAN_VERIFY_POSIX_MODE" -eq 1 ]; then
+        ln -s "$tls_dir" "$WORK_DIR/tls-link"
+        if (CONTROLLED_TLS_ALLOWED_DIR="$WORK_DIR/tls-link" TLS_PORT=12443 \
+            TLS_CERT_FILE="$WORK_DIR/tls-link/server.fullchain.pem" TLS_KEY_FILE="$WORK_DIR/tls-link/server.key.pem" \
+            configure_tls "$indent_yaml") >"$WORK_DIR/tls-dir-link.log" 2>&1; then
+            fail "TLS 符号链接目录未被拒绝"
+        fi
+        grep -q 'ERR-2390.*符号链接' "$WORK_DIR/tls-dir-link.log" || fail "TLS 目录符号链接拒绝缺少明确原因"
+        cmp -s "$indent_yaml" "$WORK_DIR/tls-config.good" || fail "TLS 符号链接拒绝仍改写了配置"
         chmod 644 "$tls_dir/server.key.pem"
         if (CONTROLLED_TLS_ALLOWED_DIR="$tls_dir" TLS_PORT=12443 TLS_CERT_FILE="$tls_dir/server.fullchain.pem" \
             TLS_KEY_FILE="$tls_dir/server.key.pem" configure_tls "$indent_yaml") >/dev/null 2>&1; then
@@ -514,6 +543,23 @@ fi
 grep -q 'ERR-2397 目标使用来源 Docker 守护进程' "$WORK_DIR/offline-same-host.log" || fail "同机拒绝缺少 ERR-2397"
 
 cp "$OFFLINE_DIR/SHA256SUMS" "$WORK_DIR/SHA256SUMS.good"
+if [ "$CAN_VERIFY_POSIX_MODE" -eq 1 ]; then
+    for linked_file in SHA256SUMS controlled-images.tar images.env source-docker-id; do
+        mv "$OFFLINE_DIR/$linked_file" "$WORK_DIR/offline-original-$linked_file"
+        ln -s "$WORK_DIR/offline-original-$linked_file" "$OFFLINE_DIR/$linked_file"
+        if sh "$ROOT_DIR/scripts/deploy/controlled-offline-import-acceptance.sh" --verify-only \
+            "$OFFLINE_DIR" "$ROOT_DIR" >"$WORK_DIR/offline-link.log" 2>&1; then
+            fail "离线导入检查未拒绝符号链接：$linked_file"
+        fi
+        grep -q 'ERR-2397.*符号链接' "$WORK_DIR/offline-link.log" || fail "离线符号链接拒绝缺少明确原因"
+        rm "$OFFLINE_DIR/$linked_file"
+        mv "$WORK_DIR/offline-original-$linked_file" "$OFFLINE_DIR/$linked_file"
+    done
+    sh "$ROOT_DIR/scripts/deploy/controlled-offline-import-acceptance.sh" --verify-only "$OFFLINE_DIR" "$ROOT_DIR" >/dev/null
+    pass "离线摘要清单、镜像归档、环境与来源文件符号链接拒绝及恢复"
+else
+    printf 'SKIP: Windows 不验证离线候选包符号链接语义，需 Linux 回归\n'
+fi
 printf 'tampered\n' >> "$OFFLINE_DIR/controlled-images.tar"
 if sh "$ROOT_DIR/scripts/deploy/controlled-offline-import-acceptance.sh" --verify-only "$OFFLINE_DIR" "$ROOT_DIR" >"$WORK_DIR/offline-hash.log" 2>&1; then
     fail "离线导入检查未拒绝摘要不匹配"

@@ -15,7 +15,7 @@ rustdesk-api-server-pro
 
 ## 受控三容器的 HTTPS 管理入口
 
-受控部署使用 `docker-compose.controlled.yaml`；需要内置 HTTPS 管理入口时，再叠加 `docker-compose.controlled-tls.yaml`。证书和私钥必须预先放在持久化数据目录的 `data/tls/server.fullchain.pem`、`data/tls/server.key.pem`，私钥权限必须为 `0600`，且不能是符号链接。覆盖文件不会生成、下载或提交证书。
+受控部署使用 `docker-compose.controlled.yaml`；需要内置 HTTPS 管理入口时，再叠加 `docker-compose.controlled-tls.yaml`。证书和私钥必须预先放在持久化数据目录的 `data/tls/server.fullchain.pem`、`data/tls/server.key.pem`，私钥权限必须为 `0600`，且不能是符号链接。TLS 文件只接受 `tls` 目录的直接子文件，目录本身及其父路径不得经过符号链接，不接受含 `..` 或嵌套子目录的文件路径。覆盖文件不会生成、下载或提交证书。
 
 ```bash
 chmod 600 data/tls/server.key.pem

@@ -72,7 +72,7 @@ CONTROLLED_INDEPENDENT_HOST=1 \
   "$OFFLINE_RELEASE_DIR" "$RUSTDESKWEB_ROOT"
 ```
 
-只检查包内容而不导入镜像时使用 `--verify-only`。该模式已在授权主机对历史完整包和当前运行镜像包通过，但不计作独立主机导入验收。完整模式要求当前包的 `source-docker-id` 有摘要覆盖，且目标 Docker ID 与来源不同；旧完整包缺少该文件，不能直接用于完整模式。
+只检查包内容而不导入镜像时使用 `--verify-only`。该模式已在授权主机对历史完整包和当前运行镜像包通过，但不计作独立主机导入验收。`SHA256SUMS` 及清单中的每个文件都必须是包内普通文件，符号链接以 `ERR-2397` 拒绝，即使链接目标的摘要正确也不允许。完整模式要求当前包的 `source-docker-id` 有摘要覆盖，且目标 Docker ID 与来源不同；旧完整包缺少该文件，不能直接用于完整模式。
 
 预检解析实际环境变量覆盖后的 Compose，不打印凭据，检查回环管理/Web 端口、强制登录、内部密钥一致、专用 API 模式、服务鉴权地址、健康依赖、允许挂载和共享 key 卷。还会只读检查原 `rustdesk-api-server-pro` 及 `rustdesk-api-server-pro-precontrolled` 的挂载，拒绝新数据与这些目录重叠，包括符号链接解析后的重叠。
 
