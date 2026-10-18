@@ -26,10 +26,12 @@
 1. 从当前受控源码构建 server/API 镜像，使用不可变镜像 ID；不发布镜像仓库。
 2. 准备主机上的规范绝对证书目录，证书 SAN 必须包含实际访问域名；私钥权限为 `0600`。只读挂载给两个 server，不复制进镜像或 Git。
 3. 设置 `WSS_TLS_DIR` 为该目录；证书名默认 `server.fullchain.pem`，私钥名默认 `server.key.pem`。现有证书文件名不同时，通过 `WSS_CERT_NAME`、`WSS_KEY_NAME` 指定，不覆盖现用文件。
+   同时设置 `RUSTDESK_RELAY_SERVERS` 为现用 `hbbs -r` 的客户端可达地址，例如 `rustdesk.jtzxsoft.com:22117`。当前覆盖仅接受单一域名或 IPv4 加端口，不填写 `wss://`；不要把隔离测试专用的 `rustdesk-hbbr` 容器名用于公网。覆盖文件会重建启动命令，不能假定旧的 `-r` 参数会自动保留。
 4. 合并基础、HTTPS 和 WSS 三份配置，先完整预检，再在保护窗口重建：
 
 ```sh
 umask 077
+export RUSTDESK_RELAY_SERVERS=rustdesk.jtzxsoft.com:22117
 docker compose -f docker-compose.controlled.yaml \
   -f docker-compose.controlled-tls.yaml \
   -f docker-compose.controlled-wss.yaml config --format json \
@@ -78,6 +80,7 @@ HTTPS 管理入口现在按路径分流 `/api`、`/api/*`、`/lic/web/api`、`/l
 
 - server 库测试覆盖受信任 WSS 二进制往返、错误证书、错误主机名、证书私钥不匹配、未配置及明文请求拒绝、握手超时；Linux 另验证私钥权限与链接拒绝。
 - `controlled-compose-preflight.py --self-test` 包含原生能力参数、只读目录、双端一致性及证书路径的负向回归。静态配置通过不代替容器实际加载证书。
+- WSS 覆盖必须显式传入中继地址，最终配置预检拒绝缺失地址、错误协议、缺少或越界端口及额外启动参数；证书有效不代表中继地址正确，正向协议验收仍须检查实际响应及双向传输。
 - `controlled-three-compose-smoke.sh` 在随机项目、内部网络且无宿主端口的环境生成一次性证书，真实验证两端 WSS 升级、证书身份拒绝、明文拒绝、在线准入、API 故障和恢复；测试后清理容器、卷、网络及测试证书。
 - 后续扩展有效令牌及重复策略矩阵到 WSS，并通过 hbbs WSS 签发、hbbr WSS 双来源核销及双向随机数据补验正向链路；结果按最新验收记录及 CI 核对，不以升级成功或旧 CI 代替新业务验证。
 - `controlled-wss-protocol-selftest.py` 验证握手字段、摘要大小写、重复头、未协商扩展/子协议、响应大小与总超时、URL/CA 参数边界，并用一次性回环证书执行真实双端 TLS 升级、错误身份及明文假服务拒绝。已接入本地综合验收，临时材料不进入仓库。

@@ -1,6 +1,6 @@
 services:
   rustdesk-hbbs:
-    command: ["hbbs", "--require-wss"]
+    command: ["hbbs", "--require-wss", "-r", "${RUSTDESK_RELAY_SERVERS:?set client-reachable relay host:port}"]
     environment:
       - "WSS_CERT_FILE=/tls/${WSS_CERT_NAME:-server.fullchain.pem}"
       - "WSS_KEY_FILE=/tls/${WSS_KEY_NAME:-server.key.pem}"

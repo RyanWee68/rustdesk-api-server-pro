@@ -164,6 +164,7 @@ printf 'PASS: 三容器隔离启动、健康依赖、无端口发布、跨容器
 WSS_WORK_DIR="$(mktemp -d)"
 export WSS_TLS_DIR="$WSS_WORK_DIR"
 export WSS_CERT_NAME=server.fullchain.pem WSS_KEY_NAME=server.key.pem
+export RUSTDESK_RELAY_SERVERS=rustdesk-hbbr:21117
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost \
     -addext subjectAltName=DNS:localhost -addext basicConstraints=critical,CA:FALSE \
     -keyout "$WSS_WORK_DIR/server.key.pem" -out "$WSS_WORK_DIR/server.fullchain.pem" \

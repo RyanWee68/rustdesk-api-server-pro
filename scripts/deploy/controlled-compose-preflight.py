@@ -67,8 +67,15 @@ def verify(config):
                     "API 日志必须使用独立持久卷")
         elif wss_enabled:
             binary = "hbbs" if name == "rustdesk-hbbs" else "hbbr"
-            require(service.get("command") == [binary, "--require-wss"] and not service.get("entrypoint"),
+            command = service.get("command")
+            require(isinstance(command, list) and not service.get("entrypoint")
+                    and (command == [binary, "--require-wss"] if binary == "hbbr"
+                         else len(command) == 4 and command[:3] == [binary, "--require-wss", "-r"]),
                     "WSS 服务必须使用原生能力强制参数启动，禁止覆盖入口")
+            if binary == "hbbs":
+                relay = re.fullmatch(r"([A-Za-z0-9][A-Za-z0-9.-]*):([0-9]{1,5})", command[3]) if isinstance(command[3], str) else None
+                require(relay and 0 < int(relay.group(2)) <= 65535,
+                        "WSS hbbs 必须显式配置客户端可达的单一中继域名或 IPv4 及端口")
             mount = next(item for item in volumes if item["target"] == "/tls")
             source = mount.get("source", "")
             require(mount.get("type") == "bind" and mount.get("read_only") is True
@@ -257,6 +264,7 @@ def self_test():
         wss_config["services"][name]["volumes"].append(
             {"target": "/tls", "type": "bind", "source": "/fixture/tls", "read_only": True})
         wss_config["services"][name]["ports"][0]["host_ip"] = "0.0.0.0"
+    wss_config["services"]["rustdesk-hbbs"]["command"] += ["-r", "relay.example.test:22117"]
     verify(wss_config)
     wss_mutations = (
         lambda s: s["rustdesk-hbbs"]["environment"].pop("WSS_KEY_FILE"),
@@ -270,6 +278,12 @@ def self_test():
         lambda s: s[api_name]["environment"].update(TLS_PORT=""),
         lambda s: s["rustdesk-hbbs"].update(command=["hbbs"]),
         lambda s: s["rustdesk-hbbr"].update(entrypoint=["sh", "-c"]),
+        lambda s: s["rustdesk-hbbs"].update(command=["hbbs", "--require-wss"]),
+        lambda s: s["rustdesk-hbbs"]["command"].__setitem__(3, ""),
+        lambda s: s["rustdesk-hbbs"]["command"].__setitem__(3, "wss://relay.example.test:22119"),
+        lambda s: s["rustdesk-hbbs"]["command"].__setitem__(3, "relay.example.test:70000"),
+        lambda s: s["rustdesk-hbbs"]["command"].__setitem__(3, "relay.example.test"),
+        lambda s: s["rustdesk-hbbs"]["command"].extend(["-p", "21116"]),
     )
     for mutate in wss_mutations:
         invalid = copy.deepcopy(wss_config)
@@ -289,7 +303,7 @@ def self_test():
         except RuntimeError:
             continue
         raise RuntimeError("ERR-2393 无效 WSS 证书配置未被拒绝")
-    print("PASS: 原生 WSS 只读证书部署通过，14 类不安全 WSS 覆盖被拒绝")
+    print("PASS: 原生 WSS 只读证书部署通过，20 类不安全 WSS 覆盖被拒绝")
     for mutate in (
         lambda c: c["volumes"].pop("key"),
         lambda c: c["volumes"]["key"].update(external=True),

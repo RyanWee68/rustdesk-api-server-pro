@@ -114,6 +114,7 @@ jobs:
           python3 scripts/deploy/controlled-compose-preflight.py \
             --config-json "${RUNNER_TEMP}/controlled-tls-compose.json"
           export WSS_TLS_DIR="${RUNNER_TEMP}/controlled-wss-certificates"
+          export RUSTDESK_RELAY_SERVERS=relay.example.test:22117
           mkdir -p "$WSS_TLS_DIR"
           docker compose \
             -f docker-compose.controlled.yaml \
