@@ -12,6 +12,8 @@ import (
 	"rustdesk-api-server-pro/config"
 	"rustdesk-api-server-pro/db"
 	"rustdesk-api-server-pro/util"
+
+	"github.com/pquerna/otp/totp"
 )
 
 // TestRustdeskClientSessionLifecycle 通过真实路由验证双版本登录、权限撤销、退出隔离及审计脱敏。
@@ -19,7 +21,7 @@ func TestRustdeskClientSessionLifecycle(t *testing.T) {
 	for _, version := range []string{"1.4.9", "1.5.0"} {
 		t.Run(version, func(t *testing.T) {
 			engine := newInternalRouteTestEngine(t)
-			if err := engine.Sync(new(model.User), new(model.AuthToken), new(model.SecurityAudit), new(model.CompatAPIAudit), new(model.OAuthLoginSession)); err != nil {
+			if err := engine.Sync(new(model.User), new(model.AuthToken), new(model.SecurityAudit), new(model.CompatAPIAudit), new(model.OAuthLoginSession), new(model.VerifyCode)); err != nil {
 				t.Fatal(err)
 			}
 			previous := db.DbEngine
@@ -145,12 +147,49 @@ func TestRustdeskClientSessionLifecycle(t *testing.T) {
 			request(http.MethodPost, "/api/logout", `{}`, result.Token, http.StatusOK)
 			request(http.MethodPost, "/api/currentUser", `{}`, result.Token, http.StatusUnauthorized)
 			request(http.MethodPost, "/api/logout", `{"id":"shared-device"}`, "", http.StatusUnauthorized)
+			const tfaSecret = "JBSWY3DPEHPK3PXP"
+			if _, err := engine.ID(1).Cols("login_verify", "tfa_secret").Update(&model.User{LoginVerify: model.LOGIN_TFA_CHECK, TwoFactorAuthSecret: tfaSecret}); err != nil {
+				t.Fatal(err)
+			}
+			pending := request(http.MethodPost, "/api/login", loginPayload, "", http.StatusOK)
+			var challenge struct {
+				Secret string `json:"secret"`
+				Type   string `json:"type"`
+			}
+			if json.Unmarshal(pending.Body.Bytes(), &challenge) != nil || challenge.Secret == "" || challenge.Type != model.LOGIN_EMAIL_CHECK {
+				t.Fatal("ERR-2398 真实路由未创建二次验证挑战")
+			}
+			otpCode, err := totp.GenerateCode(tfaSecret, time.Now())
+			if err != nil {
+				t.Fatal(err)
+			}
+			payload, err := json.Marshal(map[string]string{"id": "session-source", "uuid": "session-uuid", "type": "email_code", "secret": challenge.Secret, "tfaCode": otpCode, "verificationCode": otpCode})
+			if err != nil {
+				t.Fatal(err)
+			}
+			verified := request(http.MethodPost, "/api/login", string(payload), "", http.StatusOK)
+			var mfa struct {
+				Token string `json:"access_token"`
+				Error string `json:"error"`
+			}
+			if json.Unmarshal(verified.Body.Bytes(), &mfa) != nil || mfa.Token == "" {
+				t.Fatal("ERR-2398 真实二次验证路由未完成登录")
+			}
+			request(http.MethodPost, "/api/currentUser", `{}`, mfa.Token, http.StatusOK)
+			replayed := request(http.MethodPost, "/api/login", string(payload), "", http.StatusOK)
+			var denied struct {
+				Error string `json:"error"`
+				Token string `json:"access_token"`
+			}
+			if json.Unmarshal(replayed.Body.Bytes(), &denied) != nil || denied.Token != "" || !strings.HasPrefix(denied.Error, "ERR-1006:") {
+				t.Fatal("ERR-2398 二次验证路由重放未拒绝")
+			}
 			var audits []model.SecurityAudit
 			if err := engine.Find(&audits); err != nil || len(audits) < 5 {
 				t.Fatal("ERR-2398 缺少登录、撤销和退出审计")
 			}
 			encoded, err := json.Marshal(audits)
-			if err != nil || strings.Contains(string(encoded), result.Token) || strings.Contains(string(encoded), firstToken) || strings.Contains(string(encoded), "client-session-test-password") {
+			if err != nil || strings.Contains(string(encoded), result.Token) || strings.Contains(string(encoded), firstToken) || strings.Contains(string(encoded), mfa.Token) || strings.Contains(string(encoded), challenge.Secret) || strings.Contains(string(encoded), "client-session-test-password") {
 				t.Fatal("ERR-2398 会话审计包含原始凭据")
 			}
 		})

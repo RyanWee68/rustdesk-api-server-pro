@@ -12,6 +12,14 @@ import (
 
 var DbEngine *xorm.Engine
 
+// FormatTime 将 SQL 时间参数格式化为入库时区，避免 SQLite 驱动使用进程时区延长凭据有效期。
+func FormatTime(engine *xorm.Engine, value time.Time) string {
+	if engine.DatabaseTZ != nil {
+		value = value.In(engine.DatabaseTZ)
+	}
+	return value.Format(config.TimeFormat)
+}
+
 func NewEngine(cfg *config.DbConfig) (*xorm.Engine, error) {
 	dsn := cfg.Dsn
 	if cfg.Driver == "sqlite" && !strings.Contains(dsn, "_pragma") {

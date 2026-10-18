@@ -10,6 +10,7 @@ import (
 
 	"rustdesk-api-server-pro/app/model"
 	"rustdesk-api-server-pro/config"
+	"rustdesk-api-server-pro/db"
 	"rustdesk-api-server-pro/internal/errcode"
 	"rustdesk-api-server-pro/util"
 
@@ -329,7 +330,7 @@ func (s *WebauthnService) saveSession(kind string, userID int, sessionData *weba
 
 func (s *WebauthnService) popSession(kind string, userID int) (*webauthn.SessionData, error) {
 	var session model.WebauthnSession
-	has, err := s.db.Where("kind = ? and user_id = ? and status = 1 and expires_at > ?", kind, userID, time.Now()).Desc("created_at").Get(&session)
+	has, err := s.db.Where("kind = ? and user_id = ? and status = 1 and expires_at > ?", kind, userID, db.FormatTime(s.db, time.Now())).Desc("created_at").Get(&session)
 	if err != nil {
 		return nil, err
 	}
@@ -351,7 +352,7 @@ type loginSession struct {
 
 func (s *WebauthnService) peekLoginSession() (*loginSession, string, error) {
 	var session model.WebauthnSession
-	has, err := s.db.Where("kind = ? and status = 1 and expires_at > ?", "login", time.Now()).Desc("created_at").Get(&session)
+	has, err := s.db.Where("kind = ? and status = 1 and expires_at > ?", "login", db.FormatTime(s.db, time.Now())).Desc("created_at").Get(&session)
 	if err != nil {
 		return nil, "", err
 	}

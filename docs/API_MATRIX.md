@@ -22,7 +22,7 @@
 | 系统 | GET/POST | `/api/sysinfo_ver` | 否 | 基础 | 返回兼容 sysinfo 版本字符串 |
 | 心跳 | POST | `/api/heartbeat` | 否 | 完整 | 上报在线状态与连接；按设备/设备组下发 `strategy.config_options`，禁用设备返回 `disconnect`，无策略变化时稳定回显 `modified_at` |
 | 登录 | GET/POST | `/api/login-options` | 否 | 基础 | 返回可用登录方式，已纳入公开 smoke 与兼容命中审计 |
-| 登录 | POST | `/api/login` | 否 | 基础/待核验 | 账号登录、token 返回；成功/失败/验证码或 2FA 中间态已写 `security_audit` |
+| 登录 | POST | `/api/login` | 否 | 基础/待核验 | 账号/邮箱/2FA 签发事务化，失败保留原会话及挑战；2FA 有限有效期、禁用拒绝和单次核销；双版本真实路由与并发故障回归通过，实机待核验；写入 `security_audit` |
 | 审计 | POST | `/api/audit/conn` | 否/待核验 | 基础 | 连接开始、关闭、备注更新 |
 | 审计 | POST | `/api/audit/file` | 否/待核验 | 基础 | 文件传输日志 |
 | 审计 | POST | `/api/audit/alarm` | 否/待核验 | 基础 | 已落库到 `alarm_audit` |
@@ -34,7 +34,7 @@
 | --- | --- | --- | --- | --- | --- |
 | 用户 | GET/POST | `/api/user/*` | 是 | 待核验 | 用户信息、当前账号 |
 | 退出登录 | GET/POST/DELETE | `/api/logout` | 是 | 基础 | 按设备退出限定当前账号且排除管理员会话；错误 JSON 返回 400/ERR-6009，不误注销；成功/失败写入 `security_audit`；双版本真实路由回归通过，目标部署待更新 |
-| token 鉴权 | * | `/api/*` 鉴权接口 | 是 | 基础 | 客户端 token 无效、token 对应用户无效已写 `security_audit` |
+| token 鉴权 | * | `/api/*` 鉴权接口 | 是 | 基础 | 按数据库时区校验有效期，覆盖摘要/历史及客户端/管理员会话；无效 token 或用户写入 `security_audit` |
 | 地址簿 | GET/POST | `/api/peers/*` | 是 | 基础 | 老接口地址簿兼容；整体替换接口已写 `operation_audit`，仅记录摘要 |
 | 地址簿 | GET/POST | `/api/ab/*` | 是 | 完整 | 支持官方 GET/POST peers/tags、旧版 `/api/ab/get`、共享 profile CRUD 与 `/api/ab/rule(s)` 用户/用户组/everyone 权限 |
 | 地址簿标签 | POST/PUT/DELETE | `/api/ab/tag*` | 是 | 基础 | 标签新增、改色、重命名、删除已写 `operation_audit`；共享地址簿读取允许 `shared=true`，写入要求 owner 或共享规则 `rule >= 2` |

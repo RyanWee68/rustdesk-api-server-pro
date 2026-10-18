@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"rustdesk-api-server-pro/app/model"
 	"rustdesk-api-server-pro/config"
+	"rustdesk-api-server-pro/db"
 	"rustdesk-api-server-pro/internal/errcode"
 	"rustdesk-api-server-pro/util"
 	"strings"
@@ -1121,7 +1122,7 @@ func (s *OAuthProviderService) isAllowedEmailDomain(provider config.OAuthProvide
 
 func (s *OAuthProviderService) setState(key string, value oauthStateEntry) error {
 	if s.db != nil {
-		_, _ = s.db.Where("expires_at < ? or status = 0", time.Now()).Delete(&model.OAuthLoginSession{})
+		_, _ = s.db.Where("expires_at < ? or status = 0", db.FormatTime(s.db, time.Now())).Delete(&model.OAuthLoginSession{})
 		_, err := s.db.Insert(&model.OAuthLoginSession{Kind: "state", KeyHash: util.Sha256Hex(key), Provider: value.ProviderName, RedirectTo: value.RedirectTo, CallbackURL: value.CallbackURL, CodeVerifier: value.CodeVerifier, RustdeskId: value.RustdeskId, Uuid: value.Uuid, DeviceOs: value.DeviceOs, DeviceType: value.DeviceType, DeviceName: value.DeviceName, PollToken: value.PollToken, ExpiresAt: value.ExpiresAt, Status: 1})
 		return err
 	}
@@ -1140,7 +1141,7 @@ func (s *OAuthProviderService) setState(key string, value oauthStateEntry) error
 func (s *OAuthProviderService) popState(key string) (oauthStateEntry, bool) {
 	if s.db != nil {
 		var session model.OAuthLoginSession
-		has, err := s.db.Where("kind = ? and key_hash = ? and status = 1 and expires_at > ?", "state", util.Sha256Hex(key), time.Now()).Get(&session)
+		has, err := s.db.Where("kind = ? and key_hash = ? and status = 1 and expires_at > ?", "state", util.Sha256Hex(key), db.FormatTime(s.db, time.Now())).Get(&session)
 		if err != nil || !has {
 			return oauthStateEntry{}, false
 		}
@@ -1184,7 +1185,7 @@ func (s *OAuthProviderService) setTicket(key string, value oauthTicketEntry) err
 func (s *OAuthProviderService) popTicket(key string) (oauthTicketEntry, bool) {
 	if s.db != nil {
 		var session model.OAuthLoginSession
-		has, err := s.db.Where("kind = ? and key_hash = ? and status = 1 and expires_at > ?", "ticket", util.Sha256Hex(key), time.Now()).Get(&session)
+		has, err := s.db.Where("kind = ? and key_hash = ? and status = 1 and expires_at > ?", "ticket", util.Sha256Hex(key), db.FormatTime(s.db, time.Now())).Get(&session)
 		if err != nil || !has {
 			return oauthTicketEntry{}, false
 		}
@@ -2031,7 +2032,7 @@ func (s *OAuthProviderService) ConfirmOAuthBinding(bindingTicket, username, pass
 		return "", false, "", errcode.New(errcode.ERR2203.Code, errcode.ERR2203.Message)
 	}
 
-	updated, err := s.db.ID(sessionID).Where("status = 1 and expires_at > ?", time.Now()).Cols("status").Update(&model.OAuthLoginSession{Status: 0})
+	updated, err := s.db.ID(sessionID).Where("status = 1 and expires_at > ?", db.FormatTime(s.db, time.Now())).Cols("status").Update(&model.OAuthLoginSession{Status: 0})
 	if err != nil || updated != 1 {
 		return "", false, "", errcode.New(errcode.ERR2008.Code, errcode.ERR2008.Message)
 	}
@@ -2079,7 +2080,7 @@ func (s *OAuthProviderService) setBindingTicket(key string, value oauthBindingEn
 	if err != nil {
 		return err
 	}
-	_, _ = s.db.Where("expires_at < ? or status = 0", time.Now()).Delete(&model.OAuthLoginSession{})
+	_, _ = s.db.Where("expires_at < ? or status = 0", db.FormatTime(s.db, time.Now())).Delete(&model.OAuthLoginSession{})
 	_, err = s.db.Insert(&model.OAuthLoginSession{
 		Kind: "bind", KeyHash: util.Sha256Hex(key), Provider: value.Provider,
 		PollToken: value.PollToken, Result: string(result), ExpiresAt: expiresAt, Status: 1,
@@ -2089,7 +2090,7 @@ func (s *OAuthProviderService) setBindingTicket(key string, value oauthBindingEn
 
 func (s *OAuthProviderService) getBindingTicket(key string) (oauthBindingEntry, int, bool) {
 	var session model.OAuthLoginSession
-	has, err := s.db.Where("kind = ? and key_hash = ? and status = 1 and expires_at > ?", "bind", util.Sha256Hex(key), time.Now()).Get(&session)
+	has, err := s.db.Where("kind = ? and key_hash = ? and status = 1 and expires_at > ?", "bind", util.Sha256Hex(key), db.FormatTime(s.db, time.Now())).Get(&session)
 	if err != nil || !has {
 		return oauthBindingEntry{}, 0, false
 	}
@@ -2122,7 +2123,7 @@ func (s *OAuthProviderService) setPollEntry(pollToken, ticket string, expiresAt 
 func (s *OAuthProviderService) peekPollEntry(pollToken string) (string, bool) {
 	if s.db != nil {
 		var session model.OAuthLoginSession
-		has, err := s.db.Where("kind = ? and key_hash = ? and status = 1 and expires_at > ?", "poll", util.Sha256Hex(pollToken), time.Now()).Get(&session)
+		has, err := s.db.Where("kind = ? and key_hash = ? and status = 1 and expires_at > ?", "poll", util.Sha256Hex(pollToken), db.FormatTime(s.db, time.Now())).Get(&session)
 		if err != nil || !has {
 			return "", false
 		}
@@ -2153,7 +2154,7 @@ func (s *OAuthProviderService) ConsumePollAndExchange(pollToken string) (string,
 	keyHash := util.Sha256Hex(pollToken)
 	if s.db != nil {
 		var session model.OAuthLoginSession
-		has, err := s.db.Where("kind = ? and key_hash = ? and status = 1 and expires_at > ?", "poll", keyHash, time.Now()).Get(&session)
+		has, err := s.db.Where("kind = ? and key_hash = ? and status = 1 and expires_at > ?", "poll", keyHash, db.FormatTime(s.db, time.Now())).Get(&session)
 		if err != nil {
 			return "", err
 		}

@@ -3,6 +3,7 @@ package middleware
 import (
 	"rustdesk-api-server-pro/app/model"
 	"rustdesk-api-server-pro/config"
+	"rustdesk-api-server-pro/db"
 	"rustdesk-api-server-pro/helper"
 	"rustdesk-api-server-pro/internal/errcode"
 	"rustdesk-api-server-pro/util"
@@ -82,25 +83,25 @@ func AdminAuth(app *iris.Application) iris.Handler {
 	}
 }
 
-func getActiveAuthToken(db *xorm.Engine, token string, isAdmin bool) (model.AuthToken, bool, error) {
+func getActiveAuthToken(engine *xorm.Engine, token string, isAdmin bool) (model.AuthToken, bool, error) {
 	var authToken model.AuthToken
 	if token == "" {
 		return authToken, false, nil
 	}
 
-	now := time.Now().Format(config.TimeFormat)
+	expiresAfter := db.FormatTime(engine, time.Now())
 	tokenHash := util.Sha256Hex(token)
-	get, err := db.Where("token_hash = ? and expired > ? and status = 1 and is_admin = ?", tokenHash, now, isAdmin).Get(&authToken)
+	get, err := engine.Where("token_hash = ? and expired > ? and status = 1 and is_admin = ?", tokenHash, expiresAfter, isAdmin).Get(&authToken)
 	if get || err != nil {
 		return authToken, get, err
 	}
 
 	// Backward compatibility for tokens issued before token_hash existed.
-	get, err = db.Where("token = ? and expired > ? and status = 1 and is_admin = ?", token, now, isAdmin).Get(&authToken)
+	get, err = engine.Where("token = ? and expired > ? and status = 1 and is_admin = ?", token, expiresAfter, isAdmin).Get(&authToken)
 	if get && authToken.TokenHash == "" {
 		authToken.TokenHash = tokenHash
 		authToken.Token = ""
-		_, _ = db.Where("id = ?", authToken.Id).Cols("token_hash", "token").Update(&authToken)
+		_, _ = engine.Where("id = ?", authToken.Id).Cols("token_hash", "token").Update(&authToken)
 	}
 	return authToken, get, err
 }

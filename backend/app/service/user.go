@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang-module/carbon"
 	"github.com/kataras/iris/v12"
 	"github.com/pquerna/otp/totp"
 )
@@ -101,15 +100,18 @@ func (service *UserService) Login(loginForm api.LoginForm) iris.Map {
 			}
 		}
 
-		db.DbEngine.Insert(&model.VerifyCode{
+		_, err = db.DbEngine.Insert(&model.VerifyCode{
 			UserId:     user.Id,
 			Type:       model.VC_TYPE_MAIL,
 			Uuid:       uuid,
 			Code:       code,
 			RustdeskId: loginForm.RustdeskId,
-			Expired:    carbon.Now(service.config.Db.TimeZone).AddMinutes(expired).ToStdTime(),
+			Expired:    time.Now().Add(time.Duration(expired) * time.Minute),
 			Status:     model.VC_STATUS_UNUSED,
 		})
+		if err != nil {
+			return iris.Map{"error": errcode.New(errcode.ERRB010.Code, errcode.ERRB010.Message).Error()}
+		}
 
 		return iris.Map{
 			"type":     model.LOGIN_EMAIL_CHECK,
@@ -121,13 +123,17 @@ func (service *UserService) Login(loginForm api.LoginForm) iris.Map {
 	// 2fa 验证
 	if user.LoginVerify == model.LOGIN_TFA_CHECK {
 		uuid := util.GetUUID()
-		db.DbEngine.Insert(&model.VerifyCode{
+		_, err = db.DbEngine.Insert(&model.VerifyCode{
 			UserId:     user.Id,
 			Type:       model.VC_TYPE_2FA,
 			Uuid:       uuid,
 			RustdeskId: loginForm.RustdeskId,
+			Expired:    time.Now().Add(10 * time.Minute),
 			Status:     model.VC_STATUS_UNUSED,
 		})
+		if err != nil {
+			return iris.Map{"error": errcode.New(errcode.ERRB010.Code, errcode.ERRB010.Message).Error()}
+		}
 		return iris.Map{
 			"type":     model.LOGIN_EMAIL_CHECK,
 			"tfa_type": model.LOGIN_TFA_CHECK,
@@ -139,7 +145,10 @@ func (service *UserService) Login(loginForm api.LoginForm) iris.Map {
 	// type 取值范围：account mobile sms_code email_code tfa_code
 	// account 就是直接登录
 
-	token := service.GetLoginToken(loginForm, user.Id)
+	token, err := service.GetLoginToken(loginForm, user.Id, 0)
+	if err != nil {
+		return iris.Map{"error": err.Error()}
+	}
 	return iris.Map{
 		"access_token": token,
 		"type":         model.LOGIN_ACCESS_TOKEN,
@@ -155,16 +164,11 @@ func (service *UserService) Login(loginForm api.LoginForm) iris.Map {
 
 }
 
-// 获取登录TOKEN
-func (service *UserService) GetLoginToken(loginForm api.LoginForm, userId int) string {
-	// make other tokens expired
-	_, _ = db.DbEngine.Where("user_id = ? and rustdesk_id = ? and status = 1 and is_admin = 0", userId, loginForm.RustdeskId).Cols("status").Update(&model.AuthToken{
-		Status: 0,
-	})
-
+// GetLoginToken 在同一事务核销挑战、撤销旧会话和保存新令牌；密码登录的挑战 ID 为 0。
+func (service *UserService) GetLoginToken(loginForm api.LoginForm, userId, challengeID int) (string, error) {
 	signStr := fmt.Sprintf("%s_%s_%d_%s", loginForm.RustdeskId, loginForm.Uuid, userId, time.Now().String())
 	token := util.HmacSha256(signStr, service.config.SignKey)
-	expired := 90 * 24 * time.Hour // 3 months
+	expired := 90 * 24 * time.Hour // 保持原有 90 天会话期限。
 
 	authToken := &model.AuthToken{
 		UserId:     userId,
@@ -179,9 +183,41 @@ func (service *UserService) GetLoginToken(loginForm api.LoginForm, userId int) s
 		Status:     1,
 	}
 
-	_, _ = db.DbEngine.Insert(authToken)
-
-	return token
+	session := db.DbEngine.NewSession()
+	defer session.Close()
+	if err := session.Begin(); err != nil {
+		return "", errcode.New(errcode.ERRB010.Code, errcode.ERRB010.Message)
+	}
+	defer session.Rollback()
+	active, err := session.ID(userId).Where("status > 0").Exist(new(model.User))
+	if err != nil {
+		return "", errcode.New(errcode.ERRB010.Code, errcode.ERRB010.Message)
+	}
+	if !active {
+		return "", errcode.New(errcode.ERR1012.Code, errcode.ERR1012.Message)
+	}
+	if challengeID != 0 {
+		changed, err := session.ID(challengeID).
+			Where("user_id = ? and rustdesk_id = ? and uuid = ? and status = ? and expired > ?", userId, loginForm.RustdeskId, loginForm.Secret, model.VC_STATUS_UNUSED, db.FormatTime(db.DbEngine, time.Now())).
+			Cols("status").Update(&model.VerifyCode{Status: model.VC_STATUS_USED})
+		if err != nil {
+			return "", errcode.New(errcode.ERRB010.Code, errcode.ERRB010.Message)
+		}
+		if changed != 1 {
+			return "", errcode.New(errcode.ERR1006.Code, errcode.ERR1006.Message)
+		}
+	}
+	if _, err := session.Where("user_id = ? and rustdesk_id = ? and status = 1 and is_admin = 0", userId, loginForm.RustdeskId).
+		Cols("status").Update(&model.AuthToken{Status: 0}); err != nil {
+		return "", errcode.New(errcode.ERRB010.Code, errcode.ERRB010.Message)
+	}
+	if _, err := session.Insert(authToken); err != nil {
+		return "", errcode.New(errcode.ERRB010.Code, errcode.ERRB010.Message)
+	}
+	if err := session.Commit(); err != nil {
+		return "", errcode.New(errcode.ERRB010.Code, errcode.ERRB010.Message)
+	}
+	return token, nil
 }
 
 // 使用邮箱验证码登录
@@ -198,10 +234,7 @@ func (service *UserService) LoginVerifyByEmailCode(loginForm api.LoginForm) iris
 			"error": errcode.New(errcode.ERR1006.Code, errcode.ERR1006.Message).Error(),
 		}
 	}
-	if verifyCode.Expired.Before(time.Now()) {
-		verifyCode.Status = model.VC_STATUS_EXPIRED
-		db.DbEngine.ID(verifyCode.Id).Update(&verifyCode)
-
+	if !verifyCode.Expired.After(time.Now()) {
 		return iris.Map{
 			"error": errcode.New(errcode.ERR1006.Code, errcode.ERR1006.Message).Error(),
 		}
@@ -212,18 +245,24 @@ func (service *UserService) LoginVerifyByEmailCode(loginForm api.LoginForm) iris
 		}
 	}
 
-	verifyCode.Status = model.VC_STATUS_USED
-	db.DbEngine.ID(verifyCode.Id).Update(&verifyCode)
-
 	var user model.User
-	_, err = db.DbEngine.Where("id = ?", verifyCode.UserId).Get(&user)
+	get, err = db.DbEngine.Where("id = ?", verifyCode.UserId).Get(&user)
 	if err != nil {
 		return iris.Map{
 			"error": errcode.Errorf(errcode.ERRB010.Code, errcode.ERRB010.Message+": "+err.Error()).Error(),
 		}
 	}
 
-	token := service.GetLoginToken(loginForm, verifyCode.UserId)
+	if !get {
+		return iris.Map{"error": errcode.New(errcode.ERR1004.Code, errcode.ERR1004.Message).Error()}
+	}
+	if user.Status <= 0 {
+		return iris.Map{"error": errcode.New(errcode.ERR1012.Code, errcode.ERR1012.Message).Error()}
+	}
+	token, err := service.GetLoginToken(loginForm, verifyCode.UserId, verifyCode.Id)
+	if err != nil {
+		return iris.Map{"error": err.Error()}
+	}
 
 	return iris.Map{
 		"access_token": token,
@@ -254,6 +293,9 @@ func (service *UserService) LoginVerifyBy2FACode(loginForm api.LoginForm) iris.M
 			"error": errcode.New(errcode.ERR1006.Code, errcode.ERR1006.Message).Error(),
 		}
 	}
+	if !verifyCode.Expired.After(time.Now()) {
+		return iris.Map{"error": errcode.New(errcode.ERR1006.Code, errcode.ERR1006.Message).Error()}
+	}
 
 	var user model.User
 	get, err = db.DbEngine.Where("id = ?", verifyCode.UserId).Get(&user)
@@ -268,6 +310,9 @@ func (service *UserService) LoginVerifyBy2FACode(loginForm api.LoginForm) iris.M
 			"error": errcode.New(errcode.ERR1004.Code, errcode.ERR1004.Message).Error(),
 		}
 	}
+	if user.Status <= 0 {
+		return iris.Map{"error": errcode.New(errcode.ERR1012.Code, errcode.ERR1012.Message).Error()}
+	}
 
 	if !totp.Validate(loginForm.TfaCode, user.TwoFactorAuthSecret) {
 		return iris.Map{
@@ -275,10 +320,10 @@ func (service *UserService) LoginVerifyBy2FACode(loginForm api.LoginForm) iris.M
 		}
 	}
 
-	verifyCode.Status = model.VC_STATUS_USED
-	db.DbEngine.ID(verifyCode.Id).Update(&verifyCode)
-
-	token := service.GetLoginToken(loginForm, user.Id)
+	token, err := service.GetLoginToken(loginForm, user.Id, verifyCode.Id)
+	if err != nil {
+		return iris.Map{"error": err.Error()}
+	}
 
 	return iris.Map{
 		"access_token": token,
