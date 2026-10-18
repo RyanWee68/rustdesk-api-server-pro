@@ -52,9 +52,11 @@ python3 scripts/deploy/controlled-compose-preflight.py --self-test
 
 离线入口不会调用 Docker 或发起网络连接；成功只表示 JSON 契约检查通过，不包含现用数据挂载重叠、卷来源、宿主端口占用、实际 TLS 配置与证书或路由器转发检查。网络恢复后仍须执行原有完整预检和运行时 HTTPS、明文拒绝及独立公网检查。公网安全检查中的 `FNOS_ADMIN_HTTP_PORT` 应指定明文管理宿主端口 `22347`，不得把允许开放的 HTTPS `22346` 当作应关闭的明文管理端口。
 
-仓库内 `docker-compose.controlled-tls.yaml` 是基础三容器定义的最小 HTTPS 覆盖。使用前将公开证书链和私钥分别放入私有部署目录的 `data/tls/server.fullchain.pem`、`data/tls/server.key.pem`，私钥设为 `0600`；不要把任何证书私钥放入仓库。入口会拒绝缺项、越界路径、符号链接、证书与私钥同文件及权限过宽的私钥。网络恢复后的候选启动方式为：
+仓库内 `docker-compose.controlled-tls.yaml` 是基础三容器定义的最小 HTTPS 覆盖，支持 `TLS_CERT_NAME`、`TLS_KEY_NAME`，未设置时仍使用 `server.fullchain.pem`、`server.key.pem`。0.211 现有证书应保持原文件名及内容，只设置名称变量，不复制或重命名；私钥权限保持 `0600`，不要放入仓库。入口仍拒绝缺项、越界路径、符号链接、证书与私钥同文件及权限过宽的私钥。网络恢复后的候选启动方式为：
 
 ```bash
+export TLS_CERT_NAME=rustdesk.jtzxsoft.com.fullchain.pem
+export TLS_KEY_NAME=rustdesk.jtzxsoft.com.key.pem
 docker compose --env-file "$PRIVATE_ENV" \
   -f docker-compose.controlled.yaml \
   -f docker-compose.controlled-tls.yaml \
@@ -68,7 +70,7 @@ python3 scripts/deploy/controlled-compose-preflight.py --config-json "$PRIVATE_C
 
 ```bash
 export ADMIN_HTTPS_URL="https://rustdesk.jtzxsoft.com:22346"
-export ADMIN_TLS_CA_FILE="$PRIVATE_DEPLOY_DIR/data/tls/server.fullchain.pem"
+export ADMIN_TLS_CA_FILE="$PRIVATE_DEPLOY_DIR/data/tls/rustdesk.jtzxsoft.com.fullchain.pem"
 sh scripts/deploy/controlled-security-check.sh
 ```
 

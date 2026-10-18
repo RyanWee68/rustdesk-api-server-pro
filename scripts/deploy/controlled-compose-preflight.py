@@ -199,6 +199,12 @@ def self_test():
         "TLS_KEY_FILE": "/app/data/tls/server.key.pem",
     })
     verify(tls_config)
+    named_tls_config = copy.deepcopy(tls_config)
+    named_tls_config["services"][api_name]["environment"].update(
+        TLS_CERT_FILE="/app/data/tls/rustdesk.jtzxsoft.com.fullchain.pem",
+        TLS_KEY_FILE="/app/data/tls/rustdesk.jtzxsoft.com.key.pem")
+    verify(named_tls_config)
+    print("PASS: 自定义域名证书文件名通过，保留现有证书与私钥路径")
     tls_config["services"][api_name]["ports"].append(
         {"target": 12346, "host_ip": "192.168.0.211", "published": "22347"})
     verify(tls_config)

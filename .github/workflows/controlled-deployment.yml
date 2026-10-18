@@ -115,6 +115,9 @@ jobs:
             --config-json "${RUNNER_TEMP}/controlled-tls-compose.json"
           export WSS_TLS_DIR="${RUNNER_TEMP}/controlled-wss-certificates"
           export RUSTDESK_RELAY_SERVERS=relay.example.test:22117
+          export TLS_CERT_NAME=rustdesk.jtzxsoft.com.fullchain.pem
+          export TLS_KEY_NAME=rustdesk.jtzxsoft.com.key.pem
+          export WSS_CERT_NAME="$TLS_CERT_NAME" WSS_KEY_NAME="$TLS_KEY_NAME"
           mkdir -p "$WSS_TLS_DIR"
           docker compose \
             -f docker-compose.controlled.yaml \
@@ -123,6 +126,17 @@ jobs:
             config --format json > "${RUNNER_TEMP}/controlled-wss-compose.json"
           python3 scripts/deploy/controlled-compose-preflight.py \
             --config-json "${RUNNER_TEMP}/controlled-wss-compose.json"
+          python3 - "${RUNNER_TEMP}/controlled-wss-compose.json" <<'PY'
+          import json, os, sys
+          with open(sys.argv[1], encoding='utf-8') as source:
+              services = json.load(source)['services']
+          for name in ('rustdesk-api-server-pro', 'rustdesk-hbbs', 'rustdesk-hbbr'):
+              prefix, directory = ('TLS', '/app/data/tls/') if name == 'rustdesk-api-server-pro' else ('WSS', '/tls/')
+              for kind in ('CERT', 'KEY'):
+                  expected = directory + os.environ['TLS_' + kind + '_NAME']
+                  assert services[name]['environment'][prefix + '_' + kind + '_FILE'] == expected, 'ERR-2393 自定义证书文件名未保留'
+          print('PASS: HTTPS 与 WSS 合并后自定义证书文件名保留，不复制或改名现用证书')
+          PY
       - name: 三容器协议、API 故障及持久化验收
         run: sudo env RUSTDESK_API_IMAGE="$RUSTDESK_API_IMAGE" RUSTDESK_CONTROLLED_SERVER_IMAGE="$RUSTDESK_CONTROLLED_SERVER_IMAGE" sh scripts/deploy/controlled-three-compose-smoke.sh .
         env:

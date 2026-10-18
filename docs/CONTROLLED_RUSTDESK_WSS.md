@@ -28,11 +28,15 @@
 1. 从当前受控源码构建 server/API 镜像，使用不可变镜像 ID；不发布镜像仓库。
 2. 准备主机上的规范绝对证书目录，证书 SAN 必须包含实际访问域名；私钥权限为 `0600`。只读挂载给两个 server，不复制进镜像或 Git。
 3. 设置 `WSS_TLS_DIR` 为该目录；证书名默认 `server.fullchain.pem`，私钥名默认 `server.key.pem`。现有证书文件名不同时，通过 `WSS_CERT_NAME`、`WSS_KEY_NAME` 指定，不覆盖现用文件。
+   HTTPS 覆盖同样支持 `TLS_CERT_NAME`、`TLS_KEY_NAME`，默认文件名不变。0.211 应沿用 `rustdesk.jtzxsoft.com.fullchain.pem` 和 `rustdesk.jtzxsoft.com.key.pem`；若两类服务复用现有证书，分别将 WSS 两项设置为相同文件名，`WSS_TLS_DIR` 指向现有证书目录。不复制、重命名或重新签发证书。
    同时设置 `RUSTDESK_RELAY_SERVERS` 为现用 `hbbs -r` 的客户端可达地址，例如 `rustdesk.jtzxsoft.com:22117`。当前覆盖仅接受单一域名或 IPv4 加端口，不填写 `wss://`；不要把隔离测试专用的 `rustdesk-hbbr` 容器名用于公网。覆盖文件会重建启动命令，不能假定旧的 `-r` 参数会自动保留。
 4. 合并基础、HTTPS 和 WSS 三份配置，先完整预检，再在保护窗口重建：
 
 ```sh
 umask 077
+export TLS_CERT_NAME=rustdesk.jtzxsoft.com.fullchain.pem
+export TLS_KEY_NAME=rustdesk.jtzxsoft.com.key.pem
+export WSS_CERT_NAME="$TLS_CERT_NAME" WSS_KEY_NAME="$TLS_KEY_NAME"
 export RUSTDESK_RELAY_SERVERS=rustdesk.jtzxsoft.com:22117
 docker compose -f docker-compose.controlled.yaml \
   -f docker-compose.controlled-tls.yaml \
