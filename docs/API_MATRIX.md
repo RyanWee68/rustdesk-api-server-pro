@@ -18,7 +18,7 @@
 | 系统 | GET/POST | `/api/status`、`/api/version`、`/api/info` | 否 | 基础 | 返回版本与 `compat_target`，已纳入 smoke 与兼容命中审计 |
 | 系统 | GET/POST | `/api/features`、`/api/capabilities`、`/api/compat/features` | 否 | 基础 | 返回能力开关，包含 `compat_api_audit` |
 | 系统 | GET/POST | `/api/config`、`/api/client-config`、`/api/server-config` | 否 | 基础 | 返回客户端配置形状，已纳入 smoke 与兼容命中审计 |
-| 系统 | GET/POST | `/api/compat-target`、`/api/compat/target`、`/api/compat/version` | 否 | 基础 | 返回当前匹配对象，目标 RustDesk 1.4.9 |
+| 系统 | GET/POST | `/api/compat-target`、`/api/compat/target`、`/api/compat/version` | 否 | 基础 | 目标 RustDesk 1.5.0，保留 1.4.9；Kx v0 加密兼容，不宣告 WebRTC/Kx v1；实机升级待验收 |
 | 系统 | GET/POST | `/api/sysinfo_ver` | 否 | 基础 | 返回兼容 sysinfo 版本字符串 |
 | 心跳 | POST | `/api/heartbeat` | 否 | 完整 | 上报在线状态与连接；按设备/设备组下发 `strategy.config_options`，禁用设备返回 `disconnect`，无策略变化时稳定回显 `modified_at` |
 | 登录 | GET/POST | `/api/login-options` | 否 | 基础 | 返回可用登录方式，已纳入公开 smoke 与兼容命中审计 |

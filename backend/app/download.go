@@ -19,6 +19,10 @@ type publicDownload struct {
 }
 
 var publicDownloads = map[string]publicDownload{
+	"/downloads/rustdesk-1.5.0-x86_64.exe": {
+		fileName: "rustdesk-1.5.0-x86_64.exe",
+		sha256:   "8555777215510D83D2D61C9DC984E4FCC838BD7E79F9D18A42585431F5E8BB47",
+	},
 	"/downloads/rustdesk.jtzxsoft.com.cert.cer": {
 		fileName: "rustdesk.jtzxsoft.com.cert.cer",
 		sha256:   "F56A892AB90B0E85687403979D5F9901084B6E2657C74EFF6DC9E93AEDE0D96D",

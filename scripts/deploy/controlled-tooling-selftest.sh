@@ -293,7 +293,7 @@ case "$url" in
         printf '200'
         exit 0
         ;;
-    https://management.test:22346/downloads/rustdesk-1.4.9-x86_64.exe)
+    https://management.test:22346/downloads/rustdesk-1.4.9-x86_64.exe|https://management.test:22346/downloads/rustdesk-1.5.0-x86_64.exe)
         if [ "${MOCK_MANAGEMENT_MODE:-ok}" = "download-fail" ]; then
             printf '404'
             exit 0
@@ -360,6 +360,7 @@ pass "内部 API 安全检查严格响应与无副作用回归"
 printf 'fixture public certificate\n' > "$WORK_DIR/management-ca.pem"
 fixture_cert_sha256="$(printf 'fixture certificate' | sha256sum | awk '{print $1}')"
 fixture_installer_sha256="$(printf 'fixture installer' | sha256sum | awk '{print $1}')"
+export ADMIN_INSTALLER_150_SHA256="$fixture_installer_sha256"
 MOCK_CURL_LOG="$WORK_DIR/curl-management.log" PATH="$FAKE_BIN:$PATH" \
     API_BASE_URL="http://api.test" RUSTDESK_API_INTERNAL_SECRET="fixture-secret" \
     ADMIN_HTTPS_URL="https://management.test:22346" ADMIN_TLS_CA_FILE="$WORK_DIR/management-ca.pem" \
@@ -368,6 +369,7 @@ MOCK_CURL_LOG="$WORK_DIR/curl-management.log" PATH="$FAKE_BIN:$PATH" \
 grep -q 'PASS: 管理页 HTTPS 证书和首页访问通过' "$WORK_DIR/security-management.log" || fail "管理页 HTTPS 正向检查未通过"
 grep -q 'PASS: 管理页公开证书 HTTPS 下载和 SHA-256 校验通过' "$WORK_DIR/security-management.log" || fail "管理页证书下载摘要检查未通过"
 grep -q 'PASS: RustDesk 1.4.9 安装包 HTTPS 下载和 SHA-256 校验通过' "$WORK_DIR/security-management.log" || fail "安装包下载摘要检查未通过"
+grep -q 'PASS: RustDesk 1.5.0 安装包 HTTPS 下载和 SHA-256 校验通过' "$WORK_DIR/security-management.log" || fail "新版安装包下载摘要检查未通过"
 grep -q 'PASS: 管理页 TLS 端口拒绝明文 HTTP' "$WORK_DIR/security-management.log" || fail "管理页明文 HTTP 拒绝未通过"
 
 if MOCK_CURL_LOG="$WORK_DIR/curl-management-digest.log" PATH="$FAKE_BIN:$PATH" \
@@ -378,6 +380,16 @@ if MOCK_CURL_LOG="$WORK_DIR/curl-management-digest.log" PATH="$FAKE_BIN:$PATH" \
     fail "安装包下载摘要错误未被拒绝"
 fi
 grep -q 'ERR-2394.*安装包 SHA-256 不匹配' "$WORK_DIR/security-management-digest.log" || fail "安装包摘要错误缺少 ERR-2394"
+
+if MOCK_CURL_LOG="$WORK_DIR/curl-management-digest150.log" PATH="$FAKE_BIN:$PATH" \
+    API_BASE_URL="http://api.test" RUSTDESK_API_INTERNAL_SECRET="fixture-secret" \
+    ADMIN_HTTPS_URL="https://management.test:22346" ADMIN_TLS_CA_FILE="$WORK_DIR/management-ca.pem" \
+    ADMIN_CERT_SHA256="$fixture_cert_sha256" ADMIN_INSTALLER_SHA256="$fixture_installer_sha256" \
+    ADMIN_INSTALLER_150_SHA256="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+    sh "$ROOT_DIR/scripts/deploy/controlled-security-check.sh" >"$WORK_DIR/security-management-digest150.log" 2>&1; then
+    fail "新版安装包下载摘要错误未被拒绝"
+fi
+grep -q 'ERR-2394.*1.5.0 安装包 SHA-256 不匹配' "$WORK_DIR/security-management-digest150.log" || fail "新版安装包摘要错误缺少 ERR-2394"
 
 if MOCK_CURL_LOG="$WORK_DIR/curl-management-download.log" MOCK_MANAGEMENT_MODE=download-fail PATH="$FAKE_BIN:$PATH" \
     API_BASE_URL="http://api.test" RUSTDESK_API_INTERNAL_SECRET="fixture-secret" \

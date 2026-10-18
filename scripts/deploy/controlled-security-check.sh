@@ -144,6 +144,9 @@ check_management_https() {
     check_https_download "$https_url" "downloads/rustdesk-1.4.9-x86_64.exe" \
         "${ADMIN_INSTALLER_SHA256:-eaedeb0088e687bf46f7c46a9c6ea5493ce51f3134dfd6acbedb47b5b9136274}" \
         "RustDesk 1.4.9 安装包" "$ca_file"
+    check_https_download "$https_url" "downloads/rustdesk-1.5.0-x86_64.exe" \
+        "${ADMIN_INSTALLER_150_SHA256:-8555777215510d83d2d61c9dc984e4fcc838bd7e79f9d18a42585431f5e8bb47}" \
+        "RustDesk 1.5.0 安装包" "$ca_file"
 
     http_status="000"
     http_exit=0

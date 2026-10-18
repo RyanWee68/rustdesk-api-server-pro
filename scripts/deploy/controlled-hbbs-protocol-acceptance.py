@@ -113,6 +113,20 @@ def read_frame(stream):
     return receive(stream, size)
 
 
+def legacy_exchange_key(message):
+    """按 1.5.0 协商规则确认服务端仅声明原版加密，不把新版握手当作旧版处理。"""
+    outer = fields(message)
+    require(len(outer) == 1 and outer[0][0] == 25, "首包不是密钥交换")
+    values = fields(outer[0][1])
+    keys = [value for number, value in values if number == 1]
+    require(len(keys) == 1 and isinstance(keys[0], bytes) and len(keys[0]) == 96,
+            "服务端密钥格式无效")
+    require(all((number == 1 or (number == 2 and value == 0)) for number, value in values),
+            "服务端不是预期的 Kx v0 协商")
+    require(keys[0][-1] & 0x80 == 0, "服务端密钥要求未实现的签名参数校验")
+    return keys[0]
+
+
 class Sodium:
     """复用主机 libsodium，避免自实现加密或引入 Python 依赖。"""
 
@@ -135,13 +149,10 @@ class Sodium:
 
     def secure(self, stream, public_key):
         """校验配置公钥签名后完成官方基线密钥交换。"""
-        message = fields(read_frame(stream))
-        require(len(message) == 1 and message[0][0] == 25, "首包不是密钥交换")
-        keys = fields(message[0][1])
-        require(len(keys) == 1 and keys[0][0] == 1 and len(keys[0][1]) == 96, "服务端密钥格式无效")
+        signed_key = legacy_exchange_key(read_frame(stream))
         verified, size = ctypes.create_string_buffer(96), ctypes.c_ulonglong()
         require(len(public_key) == 32, "签名公钥长度无效")
-        require(self.lib.crypto_sign_open(verified, ctypes.byref(size), keys[0][1], 96, public_key) == 0
+        require(self.lib.crypto_sign_open(verified, ctypes.byref(size), signed_key, 96, public_key) == 0
                 and size.value == 32, "服务端签名不匹配")
         public, private = ctypes.create_string_buffer(32), ctypes.create_string_buffer(32)
         require(self.lib.crypto_box_keypair(public, private) == 0, "客户端密钥生成失败")
@@ -318,11 +329,14 @@ def acceptance(container, unavailable):
             require(False, "UDP 通知向指定第三方端口反射数据")
     print("PASS: UDP 通知未向可达的独立目标端口反射数据（非伪造源 IP 或全量抓包验收）")
     if not unavailable:
-        fixture_cases(project, address, container, public_key, encrypted, observed)
+        for client_version in ("1.4.9", "1.5.0"):
+            fixture_cases(project, address, container, public_key, encrypted, observed, client_version)
 
 
-def fixture_cases(project, address, container, public_key, encrypted, observed, relay_certificate=None):
+def fixture_cases(project, address, container, public_key, encrypted, observed, client_version, relay_certificate=None):
     """独立夹具覆盖真实 hbbs 签发与连接策略，绝不修改已有账号设备。"""
+    require(client_version in ("1.4.9", "1.5.0"), "客户端协议版本未固定")
+    print("开始客户端协议矩阵：" + client_version)
     api = command("docker", "ps", "-q", "--filter", "label=com.docker.compose.project=" + project,
                   "--filter", "label=com.docker.compose.service=rustdesk-api-server-pro").decode().split()
     require(len(api) == 1, "找不到同项目独立 API")
@@ -345,7 +359,8 @@ def fixture_cases(project, address, container, public_key, encrypted, observed, 
     user_id = token_id = target_token_id = None
     peer_started = False
     expiry = (datetime.now(ZoneInfo("Asia/Shanghai")) + timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
-    request = field(8, field(1, device.encode()) + field(3, base64.b64encode(public_key)) + field(5, token.encode()))
+    request = field(8, field(1, device.encode()) + field(3, base64.b64encode(public_key))
+                    + field(5, token.encode()) + field(6, client_version.encode()))
     try:
         with db:
             user_id = db.execute("INSERT INTO user (username,password,status,is_admin,allow_remote_access,allow_relay) VALUES (?,?,1,0,1,1)",
@@ -488,7 +503,7 @@ with wss.websocket(sys.argv[1],21119,sys.argv[4]) as s:
                         "真实 hbbs 授权重放未拒绝")
         print("PASS: 真实 hbbs 授权不能重复签发，hbbr 双端逐次核销及两端未过期重放拒绝")
         forced = field(8, field(1, device.encode()) + field(3, base64.b64encode(public_key))
-                       + field(5, token.encode()) + field(6, b"1.4.9") + b"\x40\x01")
+                       + field(5, token.encode()) + field(6, client_version.encode()) + b"\x40\x01")
         with db:
             db.execute("UPDATE device SET allow_relay=0 WHERE rustdesk_id=?", (device,))
         observed(lambda: encrypted(forced), "连接被拒绝：ERR-2309")
@@ -590,6 +605,17 @@ print('roundtrip-ok')
 def self_test():
     """离线验证协议边界和危险目标拒绝。"""
     require(field(25, field(1, b"x")).hex() == "ca01030a0178", "protobuf 固定字节错误")
+    signed = bytes(95) + b"\x7f"
+    for version in (b"", b"\x10\x00"):
+        require(legacy_exchange_key(field(25, field(1, signed) + version)) == signed,
+                "1.5.0 原版握手协商解析错误")
+    for payload in (field(1, signed) + b"\x10\x01", field(1, signed) + field(3, b"params"),
+                    field(1, bytes(95) + b"\x80"), field(1, signed) * 2):
+        try:
+            legacy_exchange_key(field(25, payload))
+        except RuntimeError:
+            continue
+        require(False, "新版或不完整握手被误当作原版加密")
     require(encoded_ipv4("127.0.0.1", 21116).hex() == "7c5200000000fe000002", "反射目标地址编码错误")
     for size in (1, 63, 64, 255, 4096):
         left, right = socket.socketpair()
@@ -624,7 +650,7 @@ def self_test():
         except RuntimeError:
             continue
         require(False, "危险目标未拒绝")
-    print("PASS: hbbs 帧边界、损坏消息及六类危险目标拒绝自测")
+    print("PASS: 1.5.0 Kx v0 协商及四类错误握手、hbbs 帧边界、损坏消息及六类危险目标拒绝自测")
 
 
 if __name__ == "__main__":

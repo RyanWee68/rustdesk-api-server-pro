@@ -1,9 +1,11 @@
 <script setup lang="ts">
 const certificateUrl = '/downloads/rustdesk.jtzxsoft.com.cert.cer';
-const installerUrl = '/downloads/rustdesk-1.4.9-x86_64.exe';
+const installerUrl = '/downloads/rustdesk-1.5.0-x86_64.exe';
+const legacyInstallerUrl = '/downloads/rustdesk-1.4.9-x86_64.exe';
 const certificateFingerprint =
   'F5:6A:89:2A:B9:0B:0E:85:68:74:03:97:9D:5F:99:01:08:4B:6E:26:57:C7:4E:FF:6D:C9:E9:3A:ED:E0:D9:6D';
-const installerSha256 = 'EAEDEB0088E687BF46F7C46A9C6EA5493CE51F3134DFD6ACBEDB47B5B9136274';
+const installerSha256 = '8555777215510D83D2D61C9DC984E4FCC838BD7E79F9D18A42585431F5E8BB47';
+const legacyInstallerSha256 = 'EAEDEB0088E687BF46F7C46A9C6EA5493CE51F3134DFD6ACBEDB47B5B9136274';
 </script>
 
 <template>
@@ -29,13 +31,17 @@ const installerSha256 = 'EAEDEB0088E687BF46F7C46A9C6EA5493CE51F3134DFD6ACBEDB47B
 
       <NCard title="RustDesk 客户端" :bordered="false" size="small">
         <NDescriptions :column="1" label-placement="left" bordered size="small">
-          <NDescriptionsItem label="版本">1.4.9 x86_64</NDescriptionsItem>
-          <NDescriptionsItem label="文件大小">23.34 MiB</NDescriptionsItem>
+          <NDescriptionsItem label="版本">1.5.0 x86_64</NDescriptionsItem>
+          <NDescriptionsItem label="文件大小">24.69 MiB</NDescriptionsItem>
           <NDescriptionsItem label="SHA-256">
             <NText code class="break-all">{{ installerSha256 }}</NText>
           </NDescriptionsItem>
         </NDescriptions>
         <NButton tag="a" :href="installerUrl" type="primary" class="mt-16px">
+          <template #icon><SvgIcon icon="mdi:download-outline" /></template>
+          下载 1.5.0 安装包
+        </NButton>
+        <NButton tag="a" :href="legacyInstallerUrl" :title="legacyInstallerSha256" text class="ml-16px mt-16px">
           <template #icon><SvgIcon icon="mdi:download-outline" /></template>
           下载 1.4.9 安装包
         </NButton>

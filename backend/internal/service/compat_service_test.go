@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,6 +9,31 @@ import (
 
 	"rustdesk-api-server-pro/internal/core"
 )
+
+// TestCompatMetadataFixture 验证公开兼容清单与运行时版本及降级边界一致。
+func TestCompatMetadataFixture(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "docs", "compat", "rustdesk-current.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture struct {
+		Client struct {
+			Version           string   `json:"version"`
+			ReleaseDate       string   `json:"release_date"`
+			SupportedVersions []string `json:"supported_versions"`
+		} `json:"client"`
+		KeyExchangeVersion int  `json:"key_exchange_version"`
+		WebRTC             bool `json:"webrtc"`
+	}
+	if err := json.Unmarshal(data, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	if fixture.Client.Version != CompatClientVersion || fixture.Client.ReleaseDate != CompatClientReleaseDate ||
+		!containsString(fixture.Client.SupportedVersions, "1.4.9") || !containsString(fixture.Client.SupportedVersions, "1.5.0") ||
+		fixture.KeyExchangeVersion != 0 || fixture.WebRTC {
+		t.Fatalf("ERR-2398 兼容清单与运行时能力不一致：%+v", fixture)
+	}
+}
 
 func TestCompatServiceHandleRecordLifecycle(t *testing.T) {
 	tmp := t.TempDir()
@@ -132,6 +158,13 @@ func TestCompatServiceTargetContract(t *testing.T) {
 	if got := client["release_date"]; got != CompatClientReleaseDate {
 		t.Fatalf("unexpected client release date: %v", got)
 	}
+	versions, ok := client["supported_versions"].([]string)
+	if !ok || !containsString(versions, "1.4.9") || !containsString(versions, "1.5.0") {
+		t.Fatalf("ERR-2398 缺少新旧客户端兼容版本：%v", versions)
+	}
+	if target["key_exchange_version"] != 0 {
+		t.Fatal("ERR-2398 不得宣告尚未实现的 Kx v1")
+	}
 
 	server, ok := target["server"].(map[string]any)
 	if !ok {
@@ -147,6 +180,9 @@ func TestCompatServiceTargetContract(t *testing.T) {
 	features, ok := target["features"].(map[string]bool)
 	if !ok {
 		t.Fatalf("features should be map[string]bool")
+	}
+	if enabled, exists := features["webrtc"]; !exists || enabled {
+		t.Fatal("ERR-2398 必须明确保持 WebRTC 未支持状态")
 	}
 	for _, key := range []string{
 		"address_book",
@@ -194,7 +230,7 @@ func TestSetCompatServerVersionNormalizesBuildTag(t *testing.T) {
 	if CompatServerVersion != "1.2.3" {
 		t.Fatalf("CompatServerVersion = %q, want 1.2.3", CompatServerVersion)
 	}
-	if got := CompatSysinfoVersion(); got != "rustdesk-api-server-pro-compat-client-1.4.9-server-1.2.3-latest" {
+	if got := CompatSysinfoVersion(); got != "rustdesk-api-server-pro-compat-client-1.5.0-server-1.2.3-latest" {
 		t.Fatalf("unexpected sysinfo version: %q", got)
 	}
 }

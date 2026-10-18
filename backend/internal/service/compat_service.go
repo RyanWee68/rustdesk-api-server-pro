@@ -16,8 +16,8 @@ import (
 )
 
 const CompatClientName = "rustdesk"
-const CompatClientVersion = "1.4.9"
-const CompatClientReleaseDate = "2026-07-06"
+const CompatClientVersion = "1.5.0"
+const CompatClientReleaseDate = "2026-09-30"
 const CompatTargetStatus = "compatibility-layer"
 
 var CompatServerVersion = "latest"
@@ -59,11 +59,14 @@ func (s *CompatService) Target() map[string]any {
 	return map[string]any{
 		"project": "rustdesk-api-server-pro",
 		"client": map[string]any{
-			"name":         CompatClientName,
-			"version":      CompatClientVersion,
-			"release_date": CompatClientReleaseDate,
-			"tag":          CompatClientVersion,
+			"name":               CompatClientName,
+			"version":            CompatClientVersion,
+			"release_date":       CompatClientReleaseDate,
+			"tag":                CompatClientVersion,
+			"supported_versions": []string{"1.4.9", "1.5.0"},
 		},
+		// 1.5.0 可协商原版加密；未实现的新版握手和 WebRTC 不对外宣告支持。
+		"key_exchange_version": 0,
 		"server": map[string]any{
 			"version": CompatServerVersion,
 			"status":  CompatTargetStatus,
@@ -80,8 +83,11 @@ func (s *CompatService) Target() map[string]any {
 			"strategy":                true,
 			"record":                  true,
 			"plugin_sign_passthrough": true,
+			"webrtc":                  false,
 		},
 		"official_focus": []string{
+			"kx_v0_backward_compatibility",
+			"oidc_login_options_string_array",
 			"insecure_connection_warning",
 			"file_transfer_conflict_handling",
 			"custom_client_incoming_only_fix",

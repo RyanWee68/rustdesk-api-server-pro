@@ -101,12 +101,13 @@ func TestPublicDownloadMetadataMatchesConsumers(t *testing.T) {
 	}
 }
 
-// TestDownloadFiles 验证两个下载路由互不串文件、附件命名和分段续传。
+// TestDownloadFiles 验证新旧客户端和证书互不串文件、附件命名和分段续传。
 func TestDownloadFiles(t *testing.T) {
 	dir := t.TempDir()
 	files := map[string]string{
 		"rustdesk.jtzxsoft.com.cert.cer": "certificate-content",
 		"rustdesk-1.4.9-x86_64.exe":      "installer-content",
+		"rustdesk-1.5.0-x86_64.exe":      "new-installer-content",
 	}
 	for name, content := range files {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0600); err != nil {

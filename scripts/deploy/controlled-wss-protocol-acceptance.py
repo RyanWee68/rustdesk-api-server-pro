@@ -196,8 +196,9 @@ def acceptance(hbbs, hbbr, certificate, unavailable):
                 time.sleep(0.1)
             require(False, "WSS 缺少本次策略拒绝日志")
 
-        protocol.fixture_cases(project, address, hbbs, public_key, exchange, observed,
-                               relay_certificate=certificate)
+        for client_version in ("1.4.9", "1.5.0"):
+            protocol.fixture_cases(project, address, hbbs, public_key, exchange, observed,
+                                   client_version, relay_certificate=certificate)
     print("PASS: 原生 hbbs/hbbr WSS 受信任升级、错误身份拒绝、明文拒绝及在线准入"
           + ("故障拒绝" if unavailable else "策略拒绝") + "，不代表浏览器完整远控通过")
 
