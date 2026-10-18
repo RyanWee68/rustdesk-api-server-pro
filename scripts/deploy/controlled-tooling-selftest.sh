@@ -254,6 +254,7 @@ output_file=""
 [ "$1" = "-q" ] || exit 1
 while [ "$#" -gt 0 ]; do
     case "$1" in
+        -k|--insecure|-L|--location) exit 1 ;;
         --noproxy)
             shift
             [ "$1" = "*" ] || exit 1
@@ -283,6 +284,29 @@ done
 [ "$noproxy" -eq 1 ] || exit 1
 printf '%s\n' "$url" >> "$MOCK_CURL_LOG"
 case "$url" in
+    http://public.test:22345/api/health|http://public.test:22345/api/login-options)
+        [ -z "$secret" ] || exit 1
+        case "${MOCK_PUBLIC_API_MODE:-ok}" in
+            timeout) exit 28 ;;
+            redirect) printf '<html>redirect</html>\n302\n'; exit 0 ;;
+            html) printf '<html>management</html>\n200\n'; exit 0 ;;
+            wrapped) printf '{"data":["password"]}\n200\n'; exit 0 ;;
+            wrong-service) printf '{"ok":true,"service":"another-service"}\n200\n'; exit 0 ;;
+            *)
+                case "$url" in
+                    */health) printf '{"ok":true,"service":"rustdesk-api-server-pro"}\n200\n' ;;
+                    *)
+                        case "${MOCK_PUBLIC_API_MODE:-ok}" in
+                            login-object) printf '{"data":["password"]}\n200\n' ;;
+                            login-number) printf '["password",1]\n200\n' ;;
+                            *) printf '["password"]\n200\n' ;;
+                        esac
+                        ;;
+                esac
+                exit 0
+                ;;
+        esac
+        ;;
     https://management.test:22346/)
         [ "${MOCK_MANAGEMENT_MODE:-ok}" != "cert-fail" ] || exit 60
         printf '200'
@@ -536,6 +560,12 @@ case "${2:-}" in
         exit "${MOCK_WSS_EXIT:-0}"
         ;;
     *connect_ex*)
+        if [ "$3" = public.test ]; then
+            case "$4" in
+                22115|22116|22117) exit 0 ;;
+                *) exit 1 ;;
+            esac
+        fi
         case "$4" in
             12346) exit 1 ;;
             *) exit 0 ;;
@@ -576,6 +606,55 @@ for wss_mode in default partial enabled rejected; do
         grep -q 'ERR-2394' "$WORK_DIR/security-wss-$wss_mode.log" || fail "WSS 门禁失败缺少错误编码"
     fi
 done
+
+# 外网只需公开端点与公开证书，不应复制目标主机内部密钥。
+run_public_check() (
+    export PATH="$FAKE_BIN:$PATH" MOCK_CURL_LOG="$WORK_DIR/curl-public.log" \
+        PUBLIC_HOST=public.test PUBLIC_API_BASE_URL=http://public.test:22345 \
+        ADMIN_HTTPS_URL=https://management.test:22346 ADMIN_TLS_CA_FILE="$WORK_DIR/management-ca.pem" \
+        ADMIN_CERT_SHA256="$fixture_cert_sha256" ADMIN_INSTALLER_SHA256="$fixture_installer_sha256" \
+        RUSTDESK_HBBS_TCP_21115=22115 RUSTDESK_HBBS_TCP_21116=22116 RUSTDESK_HBBR_TCP_21117=22117 \
+        FNOS_ADMIN_HTTP_PORT=22347 RUSTDESK_HBBS_WEB_PORT=22118 RUSTDESK_HBBR_WEB_PORT=22119 \
+        OLD_RUSTDESK_HOST=public.test RUSTDESK_API_INTERNAL_SECRET=fixture-secret
+    for setting in "$@"; do
+        export "$setting"
+    done
+    sh "$ROOT_DIR/scripts/deploy/controlled-security-check.sh" --public-only
+)
+
+run_public_check >"$WORK_DIR/security-public.log" 2>&1
+grep -q 'PASS: 公网 API health 应用层响应通过' "$WORK_DIR/security-public.log" || {
+    cat "$WORK_DIR/security-public.log"
+    fail "公网 API 健康契约未通过"
+}
+grep -q 'PASS: 公网 API login-options 应用层响应通过' "$WORK_DIR/security-public.log" || fail "公网 API 登录选项未通过"
+grep -q '/internal/' "$WORK_DIR/curl-public.log" && fail "独立公网模式调用了内部接口"
+grep -q '安全检查部分完成' "$WORK_DIR/security-public.log" || fail "独立公网模式未保留 UDP 和内部鉴权边界"
+
+for api_mode in timeout redirect html wrapped wrong-service login-object login-number; do
+    if run_public_check MOCK_PUBLIC_API_MODE="$api_mode" >"$WORK_DIR/security-public-$api_mode.log" 2>&1; then
+        fail "公网 API 错误响应被误判成功：$api_mode"
+    fi
+    grep -q 'ERR-2394.*公网 API' "$WORK_DIR/security-public-$api_mode.log" || fail "公网 API 失败未明确报告"
+done
+for invalid_api in 'http://user:secret@public.test:22345' 'http://public.test:22345/?token=secret' \
+    'file:///etc/passwd' 'http://public.test:70000' 'http://public.test:22345/admin'; do
+    if run_public_check PUBLIC_API_BASE_URL="$invalid_api" >"$WORK_DIR/security-public-url.log" 2>&1; then
+        fail "公网 API URL 非法边界未拒绝"
+    fi
+    grep -q 'secret' "$WORK_DIR/security-public-url.log" && fail "公网 API URL 拒绝日志泄漏用户信息或查询凭据"
+done
+for required_setting in PUBLIC_HOST PUBLIC_API_BASE_URL ADMIN_HTTPS_URL ADMIN_TLS_CA_FILE; do
+    : > "$WORK_DIR/curl-public.log"
+    if run_public_check "$required_setting=" >"$WORK_DIR/security-public-missing.log" 2>&1; then
+        fail "独立公网模式缺少必填端点未拒绝：$required_setting"
+    fi
+    [ ! -s "$WORK_DIR/curl-public.log" ] || fail "独立公网模式缺项后仍发起 HTTP 请求"
+done
+if sh "$ROOT_DIR/scripts/deploy/controlled-security-check.sh" --unknown >"$WORK_DIR/security-public-argument.log" 2>&1; then
+    fail "未知参数未拒绝"
+fi
+pass "独立公网无凭据入口、API 契约、错误响应与 URL 边界回归"
 rm "$FAKE_BIN/python3" "$FAKE_BIN/python"
 pass "公网 WSS 默认关闭、显式双端升级、配置缺项及失败拒绝回归"
 

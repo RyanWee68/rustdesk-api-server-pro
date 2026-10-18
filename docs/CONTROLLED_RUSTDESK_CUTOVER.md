@@ -76,7 +76,32 @@ export ADMIN_TLS_CA_FILE="$PRIVATE_DEPLOY_DIR/data/tls/rustdesk.jtzxsoft.com.ful
 sh scripts/deploy/controlled-security-check.sh
 ```
 
-该检查要求受信任 HTTPS 首页返回 200，同端口明文 HTTP 请求成功完成且返回明确的 4xx/5xx 才记为拒绝，并下载公开 DER 证书和 RustDesk 1.4.9 安装包核对固定 SHA-256。明文 2xx/3xx、异常响应或任何传输失败都会使检查失败；超时、连接重置或空响应需另取服务端证据，不可据此认定仅 HTTPS 已生效。证书或安装包经审核替换时，可分别通过 `ADMIN_CERT_SHA256`、`ADMIN_INSTALLER_SHA256` 提供新的预期摘要，但必须同步更新下载页和后端门禁。它不会替代浏览器证书安装、RustDesk 客户端连接、UDP 或独立公网端口扫描。
+该检查要求受信任 HTTPS 首页返回 200，同端口明文 HTTP 请求成功完成且返回明确的 4xx/5xx 才记为拒绝，并下载公开 DER 证书和 RustDesk 1.4.9、1.5.0 安装包核对固定 SHA-256。明文 2xx/3xx、异常响应或任何传输失败都会使检查失败；超时、连接重置或空响应需另取服务端证据，不可据此认定仅 HTTPS 已生效。证书或安装包经审核替换时，可分别通过 `ADMIN_CERT_SHA256`、`ADMIN_INSTALLER_SHA256`、`ADMIN_INSTALLER_150_SHA256` 提供新的预期摘要，但必须同步更新下载页和后端门禁。它不会替代浏览器证书安装、RustDesk 客户端连接、UDP 或独立公网端口扫描。
+
+## 独立外网无凭据验收
+
+目标网络恢复并通知开始验收后，在真正独立的网络执行；不要为此把内部准入密钥、管理员密码、客户端令牌或整个私有环境文件复制到外网设备。`--public-only` 不调用内部接口，只需公开端点与事先通过可信渠道取得的公开 PEM 证书链。本模式不能自动证明执行设备没有经过同一出口、代理或 NAT 回环，须在验收记录中注明实际网络来源。
+
+```bash
+export PUBLIC_HOST=rustdesk.jtzxsoft.com
+export PUBLIC_API_BASE_URL=http://rustdesk.jtzxsoft.com:22345
+export ADMIN_HTTPS_URL=https://rustdesk.jtzxsoft.com:22346
+export ADMIN_TLS_CA_FILE="$PUBLIC_CERT_PEM"
+export RUSTDESK_HBBS_TCP_21115=22115 RUSTDESK_HBBS_TCP_21116=22116
+export RUSTDESK_HBBR_TCP_21117=22117 RUSTDESK_HBBS_UDP_21116=22116
+export FNOS_ADMIN_HTTP_PORT=22347
+export RUSTDESK_HBBS_WEB_PORT=22118 RUSTDESK_HBBR_WEB_PORT=22119
+export OLD_RUSTDESK_HOST="$PUBLIC_HOST"
+sh scripts/deploy/controlled-security-check.sh --public-only
+```
+
+上述命令为恢复后的准备材料，本轮离线推进不执行。端口变量沿用旧名称以兼容现有工具，但值均为当前 22xxx；旧裸服务检查默认仍检查旧公网 `21115/21116/21117`，不要求重复修改路由器。关闭端口只有明确拒绝连接才记为通过，超时或解析失败均为无法确认。
+
+公网 API 仅检查 `/api/health` 的服务标识和 `/api/login-options` 的直接字符串数组，不发送登录请求、不跟随重定向、不关闭证书校验、不输出响应正文。URL 不允许用户信息、查询参数或额外路径；HTTPS API 使用系统受信任证书链。示例保留现用 HTTP API，仅用于无凭据检查，不消除官方客户端经 HTTP 登录的凭据传输风险。
+
+默认要求 `22118/22119` 关闭。只有目标原生 WSS 已部署、证书已审核且准备检查双端入口后，才额外设置 `PUBLIC_WSS_HBBS_URL=wss://rustdesk.jtzxsoft.com:22118/`、`PUBLIC_WSS_HBBR_URL=wss://rustdesk.jtzxsoft.com:22119/` 和 `PUBLIC_WSS_CA_FILE="$PUBLIC_CERT_PEM"`；不要以测试脚本支持 WSS 为由提前开放路由器端口。此时只验证 WSS 传输门禁，业务授权和浏览器远控仍不能记为通过。
+
+该模式始终保留内部鉴权未验提示，UDP 仍需独立协议证据；不要将退出码 0 或“部分完成”写成全项验收完成。记录执行时间/网络来源、两项 API 响应、HTTPS/下载摘要、当前端口/旧地址结果与未验证项，凭据和私有配置不得进入报告。
 
 ## 数据迁移演练
 

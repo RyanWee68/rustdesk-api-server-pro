@@ -351,6 +351,60 @@ check_public_exposure() {
     warn "公网 hbbs ${public_udp_port}/UDP 未经 TCP 探针验证，需从独立网络做协议级检查"
 }
 
+# 只验证公开 API 契约，不触发登录或变更业务状态。
+check_public_api() {
+    public_api="${PUBLIC_API_BASE_URL:-}"
+    if [ -z "$public_api" ]; then
+        warn "未设置 PUBLIC_API_BASE_URL，跳过公网 API 应用层检查"
+        return
+    fi
+    case "$public_api" in
+        http://*) authority="${public_api#http://}" ;;
+        https://*) authority="${public_api#https://}" ;;
+        *) fail "PUBLIC_API_BASE_URL 必须使用 http:// 或 https://"; return ;;
+    esac
+    authority="${authority%/}"
+    case "$authority" in
+        ""|*/*|*@*|*\?*|*\#*) fail "PUBLIC_API_BASE_URL 只允许域名或 IPv4、显式端口和根路径"; return ;;
+    esac
+    if [ "${authority%:*}" = "$authority" ]; then
+        fail "PUBLIC_API_BASE_URL 必须包含有效的显式端口"
+        return
+    fi
+    validate_endpoint "${authority%:*}" "${authority##*:}" "公网 API" || return
+    if ! have_cmd curl || ! select_python; then
+        fail "公网 API 检查需要 curl 和 Python 3"
+        return
+    fi
+    public_api="${public_api%/}"
+    for endpoint in health login-options; do
+        # 不携带凭据、不跟随跳转，避免错映射到管理页时被当作 API 成功。
+        if ! result="$(curl -q --noproxy '*' --proto '=http,https' -sS \
+            -m "${HTTP_TIMEOUT_SECONDS:-5}" -w '\n%{http_code}' \
+            -- "$public_api/api/$endpoint" 2>/dev/null)"; then
+            fail "公网 API $endpoint 连接或证书验证失败"
+            continue
+        fi
+        status="$(printf '%s\n' "$result" | tail -n 1)"
+        response="$(printf '%s\n' "$result" | sed '$d')"
+        if [ "$status" != 200 ] || ! printf '%s' "$response" | "$json_parser" -c '
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    valid = (isinstance(data, dict) and data.get("ok") is True
+             and data.get("service") == "rustdesk-api-server-pro") if sys.argv[1] == "health" else (
+                 isinstance(data, list) and all(isinstance(item, str) for item in data))
+    sys.exit(0 if valid else 1)
+except (ValueError, TypeError):
+    sys.exit(1)
+' "$endpoint" >/dev/null 2>&1; then
+            fail "公网 API $endpoint 返回状态或 JSON 契约不符"
+        else
+            pass "公网 API $endpoint 应用层响应通过（不代表客户端登录或远控通过）"
+        fi
+    done
+}
+
 check_old_service_shutdown() {
     old_host="${OLD_RUSTDESK_HOST:-}"
     if [ -z "$old_host" ]; then
@@ -365,7 +419,25 @@ check_old_service_shutdown() {
     warn "旧裸 hbbs ${old_udp_port}/UDP 未经 TCP 探针验证，需从独立网络做协议级检查"
 }
 
-check_internal_api_auth
+case "${1:-}" in
+    "")
+        if [ "$#" -ne 0 ]; then
+            fail "安全检查参数无效"
+            exit 1
+        fi
+        check_internal_api_auth
+        ;;
+    --public-only)
+        if [ "$#" -ne 1 ] || [ -z "${PUBLIC_HOST:-}" ] || [ -z "${PUBLIC_API_BASE_URL:-}" ] \
+            || [ -z "${ADMIN_HTTPS_URL:-}" ] || [ -z "${ADMIN_TLS_CA_FILE:-}" ]; then
+            fail "--public-only 需要 PUBLIC_HOST、PUBLIC_API_BASE_URL、ADMIN_HTTPS_URL、ADMIN_TLS_CA_FILE，且不接受其他参数"
+            exit 1
+        fi
+        warn "独立公网模式不调用内部接口、不携带内部密钥；内部鉴权须在目标环境另验"
+        ;;
+    *) fail "安全检查仅支持无参数或 --public-only"; exit 1 ;;
+esac
+check_public_api
 check_management_https
 check_public_exposure
 check_old_service_shutdown
