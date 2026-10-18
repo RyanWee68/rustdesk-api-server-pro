@@ -2,7 +2,6 @@ package api
 
 import (
 	apiform "rustdesk-api-server-pro/app/form/api"
-	"rustdesk-api-server-pro/config"
 	"rustdesk-api-server-pro/internal/core"
 
 	"github.com/kataras/iris/v12"
@@ -11,7 +10,6 @@ import (
 
 type LoginController struct {
 	basicController
-	Cfg *config.ServerConfig
 }
 
 func (c *LoginController) BeforeActivation(b mvc.BeforeActivation) {

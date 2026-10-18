@@ -110,6 +110,45 @@ jobs:
       - name: 执行公开接口冒烟测试
         run: bash scripts/compat/smoke-api.sh http://127.0.0.1:12345
 
+      - name: 双版本真实 HTTP 登录和退出回归
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess
+          from urllib.error import HTTPError
+          from urllib.request import Request, ProxyHandler, build_opener
+
+          opener = build_opener(ProxyHandler({}))
+          for version in ("1.4.9", "1.5.0"):
+              device = "compat-ci-client-" + version
+              def post(path, body, token=""):
+                  """仅向运行器回环 API 发送合成凭据，不打印请求或认证响应。"""
+                  headers = {"Content-Type": "application/json", "X-RustDesk-Version": version}
+                  if token:
+                      headers["Authorization"] = "Bearer " + token
+                  request = Request("http://127.0.0.1:12345" + path,
+                                    data=json.dumps(body).encode(), headers=headers)
+                  return opener.open(request, timeout=10)
+
+              with post("/api/login", {"username": "test", "password": "testadmin",
+                        "id": device, "uuid": device, "type": "account", "autoLogin": True,
+                        "deviceInfo": {"os": "Windows", "type": "desktop", "name": device}}) as response:
+                  login = json.load(response)
+              token = login.get("access_token")
+              assert isinstance(token, str) and token and login.get("type") == "access_token", "ERR-2398 登录格式错误"
+              assert login.get("user", {}).get("is_admin") is False, "ERR-2398 客户端登录未降权"
+              subprocess.run(["bash", "scripts/compat/smoke-api.sh", "http://127.0.0.1:12345"],
+                             env=dict(os.environ, TOKEN=token), check=True, timeout=120)
+              with post("/api/logout", {"id": device, "uuid": device}, token) as response:
+                  assert response.status == 200, "ERR-2398 退出失败"
+              try:
+                  with post("/api/currentUser", {"id": device}, token):
+                      raise RuntimeError("ERR-2398 已退出令牌仍然有效")
+              except HTTPError as error:
+                  assert error.code == 401, "ERR-2398 退出后未返回拒绝状态"
+                  assert str(json.load(error).get("message", "")).startswith("ERR-"), "ERR-2398 拒绝缺少错误码"
+              print("PASS: " + version + " 真实 HTTP 登录、鉴权接口、退出及旧令牌拒绝")
+          PY
+
       - name: 失败时显示容器日志
         if: failure()
         run: docker logs rustdesk-api-compat-ci || true

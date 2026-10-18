@@ -104,8 +104,9 @@ func (r *XormUserRepository) listAccessibleUserIDs(requestUserID int) ([]int, er
 	return out, nil
 }
 
-func (r *XormUserRepository) ExpireAuthTokenByRustdeskID(rustdeskID string) error {
-	_, err := r.DB.Where("rustdesk_id = ?", rustdeskID).Cols("status").Update(&model.AuthToken{
+// ExpireAuthTokenByRustdeskID 不得跨账号撤销，也不影响同设备的后台会话。
+func (r *XormUserRepository) ExpireAuthTokenByRustdeskID(userID int, rustdeskID string) error {
+	_, err := r.DB.Where("user_id = ? and rustdesk_id = ? and is_admin = ?", userID, rustdeskID, false).Cols("status").Update(&model.AuthToken{
 		Status: 0,
 	})
 	return err

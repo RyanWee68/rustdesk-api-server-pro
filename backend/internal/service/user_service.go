@@ -34,6 +34,7 @@ func (s *UserService) ListUsers(query core.UserListQuery) (core.UserListResult, 
 	return s.users.List(query)
 }
 
-func (s *UserService) LogoutByRustdeskID(rustdeskID string) error {
-	return s.users.ExpireAuthTokenByRustdeskID(rustdeskID)
+// LogoutByRustdeskID 仅撤销当前账号指定设备的普通客户端会话。
+func (s *UserService) LogoutByRustdeskID(userID int, rustdeskID string) error {
+	return s.users.ExpireAuthTokenByRustdeskID(userID, rustdeskID)
 }

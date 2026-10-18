@@ -33,7 +33,7 @@
 | 模块 | 方法 | 路径 | 鉴权 | 状态 | 说明 |
 | --- | --- | --- | --- | --- | --- |
 | 用户 | GET/POST | `/api/user/*` | 是 | 待核验 | 用户信息、当前账号 |
-| 退出登录 | GET/POST/DELETE | `/api/logout` | 是 | 基础 | 退出登录成功/失败已写 `security_audit` |
+| 退出登录 | GET/POST/DELETE | `/api/logout` | 是 | 基础 | 按设备退出限定当前账号且排除管理员会话；错误 JSON 返回 400/ERR-6009，不误注销；成功/失败写入 `security_audit`；双版本真实路由回归通过，目标部署待更新 |
 | token 鉴权 | * | `/api/*` 鉴权接口 | 是 | 基础 | 客户端 token 无效、token 对应用户无效已写 `security_audit` |
 | 地址簿 | GET/POST | `/api/peers/*` | 是 | 基础 | 老接口地址簿兼容；整体替换接口已写 `operation_audit`，仅记录摘要 |
 | 地址簿 | GET/POST | `/api/ab/*` | 是 | 完整 | 支持官方 GET/POST peers/tags、旧版 `/api/ab/get`、共享 profile CRUD 与 `/api/ab/rule(s)` 用户/用户组/everyone 权限 |

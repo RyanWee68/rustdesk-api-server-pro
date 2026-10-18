@@ -11,6 +11,7 @@ import (
 	"rustdesk-api-server-pro/internal/transport/httpdto"
 	"rustdesk-api-server-pro/util"
 
+	"github.com/kataras/iris/v12"
 	"github.com/kataras/iris/v12/mvc"
 )
 
@@ -77,7 +78,13 @@ func (c *UserController) HandleLogout() mvc.Result {
 
 	if c.Ctx.Request().ContentLength > 0 {
 		var f api.LoginForm
-		if err := c.readJSONBody(&f); err == nil && f.RustdeskId != "" {
+		if err := c.readJSONBody(&f); err != nil {
+			c.recordUserSecurityAudit(user, "api_logout", false, "invalid_json")
+			return mvc.Response{Code: iris.StatusBadRequest, Object: iris.Map{
+				"error": errcode.New(errcode.ERR6009.Code, errcode.ERR6009.Message).Error(),
+			}}
+		}
+		if f.RustdeskId != "" {
 			rustdeskID = f.RustdeskId
 		}
 	}
@@ -85,7 +92,7 @@ func (c *UserController) HandleLogout() mvc.Result {
 	logoutMode := "token"
 	if rustdeskID != "" {
 		logoutMode = "rustdesk_id"
-		if err := c.userService().LogoutByRustdeskID(rustdeskID); err != nil {
+		if err := c.userService().LogoutByRustdeskID(user.Id, rustdeskID); err != nil {
 			c.recordUserSecurityAudit(user, "api_logout", false, "logout_by_rustdesk_id: "+err.Error())
 			return c.fail(err)
 		}
