@@ -567,6 +567,27 @@ done
 rm "$FAKE_BIN/python3" "$FAKE_BIN/python"
 pass "公网 WSS 默认关闭、显式双端升级、配置缺项及失败拒绝回归"
 
+THREE_BIN="$WORK_DIR/three-preflight-bin"
+mkdir -p "$THREE_BIN"
+cat > "$THREE_BIN/docker" <<'EOF'
+#!/bin/sh
+if [ "$1" = image ] && [ "$2" = inspect ]; then
+    [ "$3" != alpine:3.20.3 ] || exit 1
+    exit 0
+fi
+printf 'unexpected-runtime-call\n' >> "$MOCK_THREE_LOG"
+exit 91
+EOF
+chmod +x "$THREE_BIN/docker"
+if MOCK_THREE_LOG="$WORK_DIR/three-runtime.log" PATH="$THREE_BIN:$PATH" \
+    RUSTDESK_API_IMAGE=fixture-api RUSTDESK_CONTROLLED_SERVER_IMAGE=fixture-server \
+    sh "$ROOT_DIR/scripts/deploy/controlled-three-compose-smoke.sh" "$ROOT_DIR" >"$WORK_DIR/three-preflight.log" 2>&1; then
+    fail "三容器入口未提前拒绝缺少独立来源镜像"
+fi
+grep -q 'ERR-239B 找不到指定测试镜像' "$WORK_DIR/three-preflight.log" || fail "缺少来源镜像未返回明确错误"
+[ ! -e "$WORK_DIR/three-runtime.log" ] || fail "缺少来源镜像时已经启动容器或修改运行状态"
+pass "缺少固定独立来源镜像在任何容器启动前拒绝"
+
 OFFLINE_DIR="$WORK_DIR/offline-release"
 mkdir -p "$OFFLINE_DIR"
 printf 'fixture archive\n' > "$OFFLINE_DIR/controlled-images.tar"

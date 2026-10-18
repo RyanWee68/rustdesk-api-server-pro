@@ -16,7 +16,7 @@ done
 RUSTDESK_API_IMAGE="${RUSTDESK_API_IMAGE:-}"
 RUSTDESK_CONTROLLED_SERVER_IMAGE="${RUSTDESK_CONTROLLED_SERVER_IMAGE:-}"
 [ -n "$RUSTDESK_API_IMAGE" ] && [ -n "$RUSTDESK_CONTROLLED_SERVER_IMAGE" ] || fail "未设置受控 API 和 server 镜像"
-for image in "$RUSTDESK_API_IMAGE" "$RUSTDESK_CONTROLLED_SERVER_IMAGE"; do
+for image in "$RUSTDESK_API_IMAGE" "$RUSTDESK_CONTROLLED_SERVER_IMAGE" alpine:3.20.3; do
     docker image inspect "$image" >/dev/null 2>&1 || fail "找不到指定测试镜像"
 done
 docker run --rm --pull=never --network none --entrypoint sh "$RUSTDESK_API_IMAGE" -ec \
