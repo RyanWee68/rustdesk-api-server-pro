@@ -48,7 +48,27 @@ WSS 覆盖不会自动扩大端口暴露。基础配置仍绑定回环，必须�
 
 这不是官方 Web 客户端各输入框的填写说明；具体 UI、路径和设备身份字段需取得发行包后核对。届时路由器仅增加 TCP `22118/22119` 到主机相同端口，不开放旧 2111x 端口，不转发局域网 HTTP 管理 `22347`，也不改变现有 TCP/UDP 远控端口。尚未通知进行此映射。
 
-现有 `controlled-security-check.sh` 仍按“WebSocket 公网端口必须关闭”检查当前部署。在实际开放 WSS 前还需补齐独立公网 TLS/升级探测，并调整此门禁；不能仅删除关闭检查或把 TCP 可连接当作 WSS 安全通过。本轮没有开放这些端口。
+`controlled-security-check.sh` 默认仍要求 WebSocket 公网端口明确拒绝连接。新增的可选 WSS 模式只在完整设置以下四项时，改为验证两端的证书链、主机名、TLS 1.2 以上及严格 WebSocket 升级；缺项或任意端点失败均不通过，不把 TCP 可连接当作安全通过。本轮没有开放这些端口。
+
+```sh
+export PUBLIC_HOST=rustdesk.jtzxsoft.com
+export RUSTDESK_HBBS_WEB_PORT=22118 RUSTDESK_HBBR_WEB_PORT=22119
+export PUBLIC_WSS_HBBS_URL=wss://rustdesk.jtzxsoft.com:22118/
+export PUBLIC_WSS_HBBR_URL=wss://rustdesk.jtzxsoft.com:22119/
+export PUBLIC_WSS_CA_FILE="${PRIVATE_DEPLOY_DIR:?set trusted directory outside Git}/trusted-ca.pem"
+```
+
+其余 API、管理 HTTPS、明文管理端口关闭及旧服务检查参数继续按实际部署设置，再运行 `sh scripts/deploy/controlled-security-check.sh`。CA 必须是事先核对的普通非链接 PEM 文件，不能从当前待验入口临时下载后直接信任。URL 必须与 `PUBLIC_HOST` 和对应 Web 端口一致，两个角色必须使用不同端口；仅允许根路径，无凭据、查询或片段。
+
+也可单独执行只读传输检查，不需要内部密钥，不发送账号或业务令牌：
+
+```sh
+python3 scripts/deploy/controlled-wss-protocol-acceptance.py --public \
+  "$PUBLIC_HOST" "$RUSTDESK_HBBS_WEB_PORT" "$RUSTDESK_HBBR_WEB_PORT" \
+  "$PUBLIC_WSS_CA_FILE" "$PUBLIC_WSS_HBBS_URL" "$PUBLIC_WSS_HBBR_URL"
+```
+
+该模式仅证明执行位置到指定入口的受信任 WSS 升级；明文拒绝还须服务端新增审计，业务允许/拒绝及浏览器完整远控仍须另验。从内网、NAT 回环或受 TUN 影响的主机运行，不能记为独立公网验收。完整安全脚本保留这些未验证警告及 UDP 边界，不会因 WSS 传输通过而宣称整体完成。
 
 HTTPS 管理入口现在按路径分流 `/api`、`/api/*`、`/lic/web/api`、`/lic/web/api/*` 到客户端 API；其他路径留在管理路由。路径先规范化用于边界判断，`/api/../internal` 不能转入内部 API。浏览器应使用 HTTPS API，不能从 HTTPS 页面调用现有明文客户端 API。
 
@@ -57,4 +77,5 @@ HTTPS 管理入口现在按路径分流 `/api`、`/api/*`、`/lic/web/api`、`/l
 - server 库测试覆盖受信任 WSS 二进制往返、错误证书、错误主机名、证书私钥不匹配、未配置及明文请求拒绝、握手超时；Linux 另验证私钥权限与链接拒绝。
 - `controlled-compose-preflight.py --self-test` 包含原生能力参数、只读目录、双端一致性及证书路径的负向回归。静态配置通过不代替容器实际加载证书。
 - `controlled-three-compose-smoke.sh` 在随机项目、内部网络且无宿主端口的环境生成一次性证书，真实验证两端 WSS 升级、证书身份拒绝、明文拒绝、在线准入、API 故障和恢复；测试后清理容器、卷、网络及测试证书。
+- `controlled-wss-protocol-selftest.py` 验证握手字段、摘要大小写、重复头、未协商扩展/子协议、响应大小与总超时、URL/CA 参数边界，并用一次性回环证书执行真实双端 TLS 升级、错误身份及明文假服务拒绝。已接入本地综合验收，临时材料不进入仓库。
 - 最终仍需官方 Web 客户端的已登录且已审批连接成功、未登录/待审批/禁用/关闭中继/API 故障拒绝及恢复证据。现有协议探针不能替代这些人工结果。

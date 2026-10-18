@@ -508,6 +508,65 @@ fi
 grep -q 'ERR-2394.*无法确认已关闭' "$WORK_DIR/security-timeout.log" || fail "无效探测超时未明确报告无法确认"
 pass "端口探测解析失败及无效超时默认拒绝回归"
 
+if command -v python3 >/dev/null 2>&1 && python3 --version >/dev/null 2>&1; then
+    REAL_PYTHON="$(command -v python3)"
+else
+    REAL_PYTHON="$(command -v python)"
+fi
+export REAL_PYTHON
+cat > "$FAKE_BIN/python3" <<'EOF'
+#!/bin/sh
+case "${2:-}" in
+    --public)
+        [ "$#" -eq 8 ] && [ "$3" = "wss.test" ] && [ "$4" = "21118" ] && [ "$5" = "21119" ] \
+            && [ -f "$6" ] && [ "$7" = "wss://wss.test:21118/" ] && [ "$8" = "wss://wss.test:21119/" ] || exit 19
+        printf 'fixture-public-wss\n'
+        exit "${MOCK_WSS_EXIT:-0}"
+        ;;
+    *connect_ex*)
+        case "$4" in
+            12346) exit 1 ;;
+            *) exit 0 ;;
+        esac
+        ;;
+esac
+exec "$REAL_PYTHON" "$@"
+EOF
+chmod +x "$FAKE_BIN/python3"
+cp "$FAKE_BIN/python3" "$FAKE_BIN/python"
+
+for wss_mode in default partial enabled rejected; do
+    wss_hbbs=""
+    wss_hbbr=""
+    wss_ca=""
+    wss_exit=0
+    case "$wss_mode" in
+        partial) wss_hbbs="wss://wss.test:21118/" ;;
+        enabled|rejected)
+            wss_hbbs="wss://wss.test:21118/"
+            wss_hbbr="wss://wss.test:21119/"
+            wss_ca="$WORK_DIR/management-ca.pem"
+            [ "$wss_mode" != rejected ] || wss_exit=17
+            ;;
+    esac
+    result=0
+    MOCK_CURL_LOG="$WORK_DIR/curl-wss-$wss_mode.log" PATH="$FAKE_BIN:$PATH" \
+        API_BASE_URL="http://api.test" RUSTDESK_API_INTERNAL_SECRET="fixture-secret" \
+        PUBLIC_HOST=wss.test PUBLIC_WSS_HBBS_URL="$wss_hbbs" PUBLIC_WSS_HBBR_URL="$wss_hbbr" \
+        PUBLIC_WSS_CA_FILE="$wss_ca" MOCK_WSS_EXIT="$wss_exit" \
+        sh "$ROOT_DIR/scripts/deploy/controlled-security-check.sh" >"$WORK_DIR/security-wss-$wss_mode.log" 2>&1 || result=$?
+    if [ "$wss_mode" = enabled ]; then
+        [ "$result" -eq 0 ] || fail "显式 WSS 配置未调用双端证书升级门禁"
+        grep -q 'fixture-public-wss' "$WORK_DIR/security-wss-$wss_mode.log" || fail "未实际调用 WSS 探针"
+        grep -q '公网 WSS 仅验证传输入口' "$WORK_DIR/security-wss-$wss_mode.log" || fail "WSS 门禁缺少业务未验证提示"
+    else
+        [ "$result" -ne 0 ] || fail "WSS 默认关闭、缺项或探针失败被误判通过：$wss_mode"
+        grep -q 'ERR-2394' "$WORK_DIR/security-wss-$wss_mode.log" || fail "WSS 门禁失败缺少错误编码"
+    fi
+done
+rm "$FAKE_BIN/python3" "$FAKE_BIN/python"
+pass "公网 WSS 默认关闭、显式双端升级、配置缺项及失败拒绝回归"
+
 OFFLINE_DIR="$WORK_DIR/offline-release"
 mkdir -p "$OFFLINE_DIR"
 printf 'fixture archive\n' > "$OFFLINE_DIR/controlled-images.tar"

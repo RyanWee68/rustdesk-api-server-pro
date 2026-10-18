@@ -309,6 +309,17 @@ check_port_open() {
 
 check_public_exposure() {
     public_host="${PUBLIC_HOST:-}"
+    wss_hbbs="${PUBLIC_WSS_HBBS_URL:-}"
+    wss_hbbr="${PUBLIC_WSS_HBBR_URL:-}"
+    wss_ca="${PUBLIC_WSS_CA_FILE:-}"
+    wss_enabled=0
+    if [ -n "$wss_hbbs$wss_hbbr$wss_ca" ]; then
+        if [ -z "$public_host" ] || [ -z "$wss_hbbs" ] || [ -z "$wss_hbbr" ] || [ -z "$wss_ca" ]; then
+            fail "公网 WSS 检查必须同时设置 PUBLIC_HOST、PUBLIC_WSS_HBBS_URL、PUBLIC_WSS_HBBR_URL、PUBLIC_WSS_CA_FILE"
+            return
+        fi
+        wss_enabled=1
+    fi
     if [ -z "$public_host" ]; then
         warn "未设置 PUBLIC_HOST，跳过公网暴露实测"
         return
@@ -319,8 +330,20 @@ check_public_exposure() {
     check_port_open "$public_host" "${RUSTDESK_HBBR_TCP_21117:-21117}" "受控 hbbr 21117"
 
     check_port_closed "$public_host" "${FNOS_ADMIN_HTTP_PORT:-12346}" "管理后台公网端口"
-    check_port_closed "$public_host" "${RUSTDESK_HBBS_WEB_PORT:-21118}" "hbbs Web 公网端口"
-    check_port_closed "$public_host" "${RUSTDESK_HBBR_WEB_PORT:-21119}" "hbbr Web 公网端口"
+    if [ "$wss_enabled" -eq 1 ]; then
+        if ! select_python; then
+            fail "未找到 Python，无法验证公网 WSS"
+        elif "$json_parser" "$(dirname -- "$0")/controlled-wss-protocol-acceptance.py" --public \
+            "$public_host" "${RUSTDESK_HBBS_WEB_PORT:-21118}" "${RUSTDESK_HBBR_WEB_PORT:-21119}" \
+            "$wss_ca" "$wss_hbbs" "$wss_hbbr"; then
+            warn "公网 WSS 仅验证传输入口；明文拒绝审计、业务准入及浏览器远控仍需目标验收"
+        else
+            fail "公网 WSS 证书或升级验证未通过，不得据此开放 WebSocket 端口"
+        fi
+    else
+        check_port_closed "$public_host" "${RUSTDESK_HBBS_WEB_PORT:-21118}" "hbbs Web 公网端口"
+        check_port_closed "$public_host" "${RUSTDESK_HBBR_WEB_PORT:-21119}" "hbbr Web 公网端口"
+    fi
     public_udp_port="${RUSTDESK_HBBS_UDP_21116:-${RUSTDESK_HBBS_TCP_21116:-21116}}"
     warn "公网 hbbs ${public_udp_port}/UDP 未经 TCP 探针验证，需从独立网络做协议级检查"
 }

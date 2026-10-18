@@ -76,6 +76,7 @@ fi
 if [ -n "$python_bin" ]; then
     run_required "中继协议探针自测" "$python_bin" "$ROOT_DIR/scripts/deploy/controlled-relay-protocol-acceptance.py" --self-test
     run_required "hbbs 协议探针自测" "$python_bin" "$ROOT_DIR/scripts/deploy/controlled-hbbs-protocol-acceptance.py" --self-test
+    run_required "WSS 公网门禁与回环 TLS 自测" "$python_bin" "$ROOT_DIR/scripts/deploy/controlled-wss-protocol-selftest.py"
     run_required "SQLite 迁移演练自检" "$python_bin" "$ROOT_DIR/scripts/deploy/controlled-sqlite-migration-rehearsal.py" --self-test
     run_required "最终 Compose 配置预检自测" "$python_bin" "$ROOT_DIR/scripts/deploy/controlled-compose-preflight.py" --self-test
 else
