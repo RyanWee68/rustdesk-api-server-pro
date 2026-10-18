@@ -6,7 +6,9 @@
 
 本轮开发了原生 WSS 传输和 HTTPS 客户端 API 分流。修复提交 `1a2c6d6` 的[远程 CI 39057113188](https://github.com/RyanWee68/rustdesk-api-server-pro/actions/runs/39057113188) 四作业全部成功，包含 Linux 24 项库测试及真实 WSS 三容器的在线准入、API 故障和恢复。传输及协议测试通过不等于浏览器完整远控通过，目标主机部署和官方 Web 客户端端到端验收仍待进行。
 
-官方说明：自托管 Web 客户端集成在 Server Pro 中，并要求符合条件的订阅。当前未提供授权发行包，不下载或重新打包官方托管站的资源，也不向第三方页面提供账号或令牌。取得可合法自托管的官方发行包后再确认部署目录、版本、接口兼容性及更新方式。[官方来源](https://www.rustdesk.com/blog/rustdesk-web-client-v2-preview/)
+后续补齐公网传输门禁，并同步独立用户 fork `a8c1c2a`：主仓库 `606bef7` 的[39082466648](https://github.com/RyanWee68/rustdesk-api-server-pro/actions/runs/39082466648) 四作业全部成功，严格升级在真实三容器的 API 正常、故障和恢复窗口通过；独立 fork 的[39082930156](https://github.com/RyanWee68/rustdesk-server-controlled/actions/runs/39082930156) Linux 编译和 24 项库测试通过。服务端代码及隔离协议验证已补齐，0.211 部署和独立公网仍未执行。
+
+官方说明：自托管 Web 客户端集成在 Server Pro 中，并要求符合条件的订阅。用户已确认没有授权及发行包，最新范围为先完成 WSS 服务端，浏览器页面暂停；不采购订阅，不下载或重新打包官方托管站资源，也不向第三方页面提供账号或令牌。仅在用户以后重新明确浏览器客户端来源时继续。[官方来源](https://www.rustdesk.com/blog/rustdesk-web-client-v2-preview/)
 
 ## 安全边界
 
@@ -78,4 +80,4 @@ HTTPS 管理入口现在按路径分流 `/api`、`/api/*`、`/lic/web/api`、`/l
 - `controlled-compose-preflight.py --self-test` 包含原生能力参数、只读目录、双端一致性及证书路径的负向回归。静态配置通过不代替容器实际加载证书。
 - `controlled-three-compose-smoke.sh` 在随机项目、内部网络且无宿主端口的环境生成一次性证书，真实验证两端 WSS 升级、证书身份拒绝、明文拒绝、在线准入、API 故障和恢复；测试后清理容器、卷、网络及测试证书。
 - `controlled-wss-protocol-selftest.py` 验证握手字段、摘要大小写、重复头、未协商扩展/子协议、响应大小与总超时、URL/CA 参数边界，并用一次性回环证书执行真实双端 TLS 升级、错误身份及明文假服务拒绝。已接入本地综合验收，临时材料不进入仓库。
-- 最终仍需官方 Web 客户端的已登录且已审批连接成功、未登录/待审批/禁用/关闭中继/API 故障拒绝及恢复证据。现有协议探针不能替代这些人工结果。
+- 当前服务端仍需目标部署、真实证书和独立公网入口验收。浏览器页面已暂停；若以后恢复该范围，再补官方 Web 客户端的已登录且已审批连接成功、未登录/待审批/禁用/关闭中继/API 故障拒绝及恢复证据，现有协议探针不能替代这些人工结果。

@@ -1,8 +1,10 @@
 # RustDesk Server 受控改造基线与任务清单
 
-更新时间：2026-10-16
+更新时间：2026-10-18
 
-当前已固定官方基线并形成可重放补丁：`patches/rustdesk-server/`。独立本地维护仓库为 `D:/WorkSpace/Other/RustDeskServerControlled`，分支 `codex/controlled-admission`；私有远程 fork 为 `RyanWee68/rustdesk-server-controlled`，官方仓库保留为 `upstream`。显式强制中继修复提交 `41e846fcb4e345084bc84af4263a9bb1f5def1e1` 已通过维护 CI；普通连接自动中继修复提交 `8996bd5` 已推送到用户 fork，Linux release 构建和 17 项库回归通过，0.211 上官方 1.4.9 跨网络普通连接实测成功。以下清单继续作为维护要求，共享出口角色证明、正常 WSS、任意代理换出口与独立公网防绕过验收仍未完成。
+当前已固定官方基线并形成可重放补丁：`patches/rustdesk-server/`。独立本地维护仓库为 `D:/WorkSpace/Other/RustDeskServerControlled`，分支 `codex/controlled-admission`；私有远程 fork 为 `RyanWee68/rustdesk-server-controlled`，官方仓库保留为 `upstream`。显式强制中继修复提交 `41e846fcb4e345084bc84af4263a9bb1f5def1e1` 已通过维护 CI；普通连接自动中继修复提交 `8996bd5` 已推送到用户 fork，Linux release 构建和 17 项库回归通过，0.211 上官方 1.4.9 跨网络普通连接实测成功。以下清单记录早期维护要求，最新范围和 WSS 状态以下段为准。
+
+2026-10-18 更新：原生 WSS 同步提交 `a8c1c2a` 已推送到用户 fork；全部受控源码及依赖锁文件与 API 仓库 `606bef7` 的固定补丁副本逐项摘要一致。本机完整库测试 23/23、双服务实际构建和源码检查通过，维护 CI 补齐 OpenSSL；[39082930156](https://github.com/RyanWee68/rustdesk-server-controlled/actions/runs/39082930156) 的 Linux 编译和 24/24 库测试通过。API 仓库本轮[39082466648](https://github.com/RyanWee68/rustdesk-api-server-pro/actions/runs/39082466648) 四作业全部成功，包含严格 WSS 升级、真实三容器 API 正常/故障/恢复及持久化。WSS 目标部署及独立公网仍待验；共享出口角色证明按用户决定移出本期范围并维持拒绝限制，浏览器页面因缺少官方授权发行包暂停。详见 `CONTROLLED_RUSTDESK_WSS.md`。
 
 ## 选型结论
 
