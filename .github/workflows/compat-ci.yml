@@ -90,7 +90,7 @@ jobs:
         run: |
           docker run -d \
             --name rustdesk-api-compat-ci \
-            --network host \
+            -p 127.0.0.1:12345:12345 \
             -e ADMIN_USER=test \
             -e ADMIN_PASS=testadmin \
             -v "$PWD/compat-ci-server.yaml:/app/server.yaml:ro" \
@@ -152,3 +152,7 @@ jobs:
       - name: 失败时显示容器日志
         if: failure()
         run: docker logs rustdesk-api-compat-ci || true
+
+      - name: 清理隔离测试容器
+        if: always()
+        run: docker rm -f rustdesk-api-compat-ci >/dev/null 2>&1 || true
