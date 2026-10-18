@@ -18,6 +18,7 @@
 ## 自动回归结果
 
 - 后续认证补验已为密码/邮箱/2FA 会话签发加入事务，拒绝数据库写入失败、禁用用户、过期挑战和挑战重放，并补齐跨数据库时区的令牌、OAuth 及 WebAuthn 临时会话过期检查。两版真实 API 路由均覆盖 2FA 登录与重放；这些是本地合成回归，不代表桌面客户端或外部认证服务实测。
+- 上述认证修复 `e5bf77c` 已通过[兼容性 CI 39117396446](https://github.com/RyanWee68/rustdesk-api-server-pro/actions/runs/39117396446) 全部三作业，Linux 全量后端回归及两版运行中 Docker API 普通登录/退出通过；[完整三容器验收 39117398476](https://github.com/RyanWee68/rustdesk-api-server-pro/actions/runs/39117398476) 同时成功，每版各四轮 TCP/WSS 矩阵、双向 WSS 数据、重放拒绝、API 故障恢复及持久化通过。仅运行器本地构建，不发布镜像，不替代目标部署或实机验收。
 
 - 后续补齐同源真实 API 路由测试，发现并修复登录 JSON 被重复配置字段绑定提前消费的 EOF 问题，以及按设备 ID 退出未限定当前账号/普通客户端会话的问题。错误退出 JSON 现在返回 HTTP 400/`ERR-6009`，保留有效令牌；GET/POST/DELETE 退出格式保持兼容。双版本覆盖重复登录、旧令牌撤销、禁用及恢复、退出隔离和审计脱敏，本机全量后端测试与构建通过。以上是后续 API 修复，不能用下列较早的协议 CI 代替其验证。
 - 后续 API 修复由 `d13a1dd` 的[39110197788](https://github.com/RyanWee68/rustdesk-api-server-pro/actions/runs/39110197788) 完成 Linux 三作业验证；最终 CI 回环边界修正 `1c0d491` 的[39110465193](https://github.com/RyanWee68/rustdesk-api-server-pro/actions/runs/39110465193) 再次全通过。两版分别用合成账号登录真实 Docker API、运行公开及鉴权 smoke、退出并验证旧令牌 401。该证据不是官方客户端远控，也不表示目标主机已更新。
