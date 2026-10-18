@@ -319,6 +319,7 @@ var (
 	ERRB008 = register("ERR-B008", "DownloadFileFailed", "infra", "发送下载文件失败", "检查文件权限、磁盘状态和服务端日志", "Failed to send download file", "Check file permissions, disk status, and server logs")
 	ERRB009 = register("ERR-B009", "DownloadFileChecksumMismatch", "infra", "下载文件校验失败", "重新部署摘要匹配的下载文件", "Download file checksum mismatch", "Redeploy the download file with the expected checksum")
 	ERRB010 = register("ERR-B010", "DatabaseError", "infra", "数据库操作错误", "检查数据库连接和配置，查看服务端日志获取详细错误", "Database operation error", "Check database connection and configuration, check server logs for details")
+	ERRB011 = register("ERR-B011", "InvalidTLSMaterial", "infra", "TLS 证书或私钥不可用", "核对证书与私钥配对、有效期及文件权限，不要删除现有密钥自动重签", "TLS certificate or private key is unavailable", "Check the certificate pair, validity and permissions; do not delete existing keys to regenerate")
 )
 
 var (

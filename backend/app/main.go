@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -178,21 +177,15 @@ func startTLSServer(app *iris.Application, cfg *config.ServerConfig, targetPort 
 	certFile := cfg.HttpConfig.TLSCertFile
 	keyFile := cfg.HttpConfig.TLSKeyFile
 
-	if certFile == "" || keyFile == "" {
+	if certFile == "" && keyFile == "" {
 		certFile = filepath.Join(filepath.Dir(cfg.Db.Dsn), "tls-cert.pem")
 		keyFile = filepath.Join(filepath.Dir(cfg.Db.Dsn), "tls-key.pem")
 	}
 
-	if _, err := os.Stat(certFile); os.IsNotExist(err) {
-		hosts := cfg.HttpConfig.TLSHosts
-		if len(hosts) == 0 {
-			hosts = []string{"localhost", "127.0.0.1"}
-		}
-		app.Logger().Infof("生成自签名证书: hosts=%v", hosts)
-		if _, _, err := util.GenerateSelfSignedCert(certFile, keyFile, hosts); err != nil {
-			app.Logger().Errorf("生成自签名证书失败: %v", err)
-			return
-		}
+	pair, err := util.LoadOrCreateTLSCertificate(certFile, keyFile, cfg.HttpConfig.TLSHosts)
+	if err != nil {
+		app.Logger().Errorf("%v", err)
+		return
 	}
 
 	httpPort := strings.TrimPrefix(targetPort, ":")
@@ -207,14 +200,15 @@ func startTLSServer(app *iris.Application, cfg *config.ServerConfig, targetPort 
 		Addr:    cfg.HttpConfig.TLSPort,
 		Handler: proxy,
 		TLSConfig: &tls.Config{
-			MinVersion: tls.VersionTLS12,
+			MinVersion:   tls.VersionTLS12,
+			Certificates: []tls.Certificate{pair},
 		},
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	app.Logger().Infof("HTTPS 反向代理监听: %s -> http://127.0.0.1:%s", cfg.HttpConfig.TLSPort, httpPort)
-	if err := tlsServer.ListenAndServeTLS(certFile, keyFile); err != nil && err != http.ErrServerClosed {
-		app.Logger().Errorf("HTTPS 服务器启动失败: %v", err)
+	if err := tlsServer.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
+		app.Logger().Errorf("ERR-B011 HTTPS 服务器启动失败: %v", err)
 	}
 }
 
