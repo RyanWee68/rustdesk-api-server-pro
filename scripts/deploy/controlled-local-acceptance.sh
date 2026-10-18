@@ -79,6 +79,7 @@ if [ -n "$python_bin" ]; then
     run_required "WSS 公网门禁与回环 TLS 自测" "$python_bin" "$ROOT_DIR/scripts/deploy/controlled-wss-protocol-selftest.py"
     run_required "SQLite 迁移演练自检" "$python_bin" "$ROOT_DIR/scripts/deploy/controlled-sqlite-migration-rehearsal.py" --self-test
     run_required "最终 Compose 配置预检自测" "$python_bin" "$ROOT_DIR/scripts/deploy/controlled-compose-preflight.py" --self-test
+    run_required "恢复后主机只读就绪自测" "$python_bin" "$ROOT_DIR/scripts/deploy/controlled-rollout-readiness.py" --self-test
 else
     skip "未检测到可执行的 python3/python，跳过 Python 自测"
 fi
