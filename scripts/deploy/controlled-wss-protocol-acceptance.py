@@ -87,11 +87,29 @@ def public_acceptance(host, hbbs_port, hbbr_port, certificate, hbbs_url, hbbr_ur
 
 
 def send_binary(stream, payload):
-    """沿用既有协议探针的短掩码二进制帧格式。"""
-    require(len(payload) < 126, "WSS 探针帧过大")
+    """发送有界且带随机掩码的完整二进制消息。"""
+    require(0 < len(payload) <= 4096, "WSS 探针帧长度无效")
     mask = secrets.token_bytes(4)
-    stream.sendall(bytes([0x82, 0x80 | len(payload)]) + mask
+    length = bytes([len(payload)]) if len(payload) < 126 else b"\x7e" + len(payload).to_bytes(2, "big")
+    stream.sendall(b"\x82" + bytes([length[0] | 0x80]) + length[1:] + mask
                    + bytes(value ^ mask[index % 4] for index, value in enumerate(payload)))
+
+
+def read_binary(stream):
+    """读取未协商扩展的完整服务端消息，首字节 EOF 或完整关闭帧返回空值。"""
+    first = stream.recv(1)
+    if not first:
+        return None
+    flags = protocol.receive(stream, 1)[0]
+    require(first[0] in (0x82, 0x88) and flags & 0x80 == 0, "WSS 响应不是完整无掩码二进制或关闭消息")
+    size = flags & 0x7f
+    require(size != 127 and (first[0] != 0x88 or size < 126), "WSS 响应长度编码无效")
+    if size == 126:
+        size = int.from_bytes(protocol.receive(stream, 2), "big")
+        require(size >= 126, "WSS 响应长度编码非规范")
+    require(size <= 4096 and (first[0] != 0x88 or size != 1), "WSS 响应帧长度无效")
+    payload = protocol.receive(stream, size)
+    return None if first[0] == 0x88 else payload
 
 
 def acceptance(hbbs, hbbr, certificate, unavailable):
@@ -155,6 +173,31 @@ def acceptance(hbbs, hbbr, certificate, unavailable):
             time.sleep(0.1)
         else:
             require(False, "缺少 WSS 明文握手拒绝审计")
+    if not unavailable:
+        public_key = base64.b64decode(command("docker", "exec", hbbs, "cat", "/data/id_ed25519.pub").strip(), validate=True)
+
+        def exchange(message, response=False):
+            """WSS 已完成服务端身份验证，不再走 TCP 专用的额外密钥交换。"""
+            with websocket(address, 21118, certificate) as stream:
+                send_binary(stream, message)
+                if response:
+                    reply = read_binary(stream)
+                    require(reply is not None, "WSS 正向准入响应提前关闭")
+                    return protocol.fields(reply)
+                time.sleep(0.3)
+
+        def observed(action, expected):
+            """要求 WSS 本次请求新增拒绝审计，旧日志不算通过。"""
+            before = count(hbbs, expected)
+            action()
+            for _ in range(70):
+                if count(hbbs, expected) > before:
+                    return
+                time.sleep(0.1)
+            require(False, "WSS 缺少本次策略拒绝日志")
+
+        protocol.fixture_cases(project, address, hbbs, public_key, exchange, observed,
+                               relay_certificate=certificate)
     print("PASS: 原生 hbbs/hbbr WSS 受信任升级、错误身份拒绝、明文拒绝及在线准入"
           + ("故障拒绝" if unavailable else "策略拒绝") + "，不代表浏览器完整远控通过")
 

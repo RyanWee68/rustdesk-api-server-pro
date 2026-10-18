@@ -98,6 +98,63 @@ class UpgradeTests(unittest.TestCase):
                             self.fail("ERR-239D 无效响应不应升级成功")
 
 
+class FrameTests(unittest.TestCase):
+    """覆盖正向准入及中继数据新增的有界 WebSocket 消息编解码。"""
+
+    def test_masked_send(self):
+        """短帧及扩展长度均带掩码，回读后数据逐字节一致。"""
+        for size in (1, 125, 126, 256, 4096):
+            left, right = socket.socketpair()
+            with self.subTest(size=size), left, right:
+                right.settimeout(1)
+                payload = bytes(index % 256 for index in range(size))
+                wss.send_binary(left, payload)
+                header = wss.protocol.receive(right, 2)
+                self.assertEqual(header[0], 0x82)
+                self.assertTrue(header[1] & 0x80)
+                length = header[1] & 0x7f
+                if length == 126:
+                    length = int.from_bytes(wss.protocol.receive(right, 2), "big")
+                self.assertEqual(length, size)
+                mask = wss.protocol.receive(right, 4)
+                encoded = wss.protocol.receive(right, length)
+                self.assertEqual(bytes(value ^ mask[index % 4] for index, value in enumerate(encoded)), payload)
+        for size in (0, 4097):
+            with self.subTest(size=size), patch.object(wss.socket, "socket") as stream:
+                with self.assertRaisesRegex(RuntimeError, "ERR-239D.*长度"):
+                    wss.send_binary(stream, b"x" * size)
+                stream.sendall.assert_not_called()
+
+    def test_binary_receive(self):
+        """服务端短帧及扩展长度完整回读，规范关闭不算业务数据。"""
+        for size in (0, 1, 125, 126, 257, 4096):
+            left, right = socket.socketpair()
+            with self.subTest(size=size), left, right:
+                right.settimeout(1)
+                payload = b"x" * size
+                length = bytes([size]) if size < 126 else b"\x7e" + size.to_bytes(2, "big")
+                left.sendall(b"\x82" + length + payload)
+                self.assertEqual(wss.read_binary(right), payload)
+        for frame in (b"", b"\x88\x00", b"\x88\x02\x03\xe8"):
+            left, right = socket.socketpair()
+            with self.subTest(frame=frame), left, right:
+                left.sendall(frame)
+                left.shutdown(socket.SHUT_WR)
+                self.assertIsNone(wss.read_binary(right))
+
+    def test_malformed_receive(self):
+        """拒绝掩码、碎片、文本、超长和截断消息，不把它们当拒绝证据。"""
+        for frame in (b"\x82", b"\x82\x80", b"\x02\x00", b"\xc2\x00", b"\x81\x00",
+                      b"\x82\x7f", b"\x82\x7e\x00\x01", b"\x82\x7e\x10\x01",
+                      b"\x82\x02x", b"\x88\x01x", b"\x88\x7e"):
+            left, right = socket.socketpair()
+            with self.subTest(frame=frame), left, right:
+                right.settimeout(1)
+                left.sendall(frame)
+                left.shutdown(socket.SHUT_WR)
+                with self.assertRaisesRegex(RuntimeError, "ERR-239D"):
+                    wss.read_binary(right)
+
 class TransportTests(unittest.TestCase):
     """使用真实 TLS 握手验证信任链、域名与公网双端入口。"""
 

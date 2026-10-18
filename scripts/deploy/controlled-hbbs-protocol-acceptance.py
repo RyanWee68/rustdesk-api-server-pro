@@ -321,7 +321,7 @@ def acceptance(container, unavailable):
         fixture_cases(project, address, container, public_key, encrypted, observed)
 
 
-def fixture_cases(project, address, container, public_key, encrypted, observed):
+def fixture_cases(project, address, container, public_key, encrypted, observed, relay_certificate=None):
     """独立夹具覆盖真实 hbbs 签发与连接策略，绝不修改已有账号设备。"""
     api = command("docker", "ps", "-q", "--filter", "label=com.docker.compose.project=" + project,
                   "--filter", "label=com.docker.compose.service=rustdesk-api-server-pro").decode().split()
@@ -427,7 +427,6 @@ def fixture_cases(project, address, container, public_key, encrypted, observed):
         require(len(hbbr_ids) == 1, "找不到同项目 hbbr")
         hbbr = hbbr_ids[0]
         relay_address = json.loads(command("docker", "inspect", hbbr))[0]["NetworkSettings"]["Networks"][project + "_rustdesk-control"]["IPAddress"]
-        frame = base64.b64encode(framed(field(18, field(2, session.encode())))).decode()
         relay_code = """import base64,socket,sys
 with socket.create_connection((sys.argv[1],21117),timeout=6) as s:
     s.settimeout(1)
@@ -437,9 +436,26 @@ with socket.create_connection((sys.argv[1],21117),timeout=6) as s:
     except socket.timeout:
         print('pending')
 """
+        relay_args = []
+        if relay_certificate is not None:
+            relay_code = """import base64,importlib,socket,sys
+sys.dont_write_bytecode = True
+sys.path.insert(0,sys.argv[3])
+wss = importlib.import_module('controlled-wss-protocol-acceptance')
+with wss.websocket(sys.argv[1],21119,sys.argv[4]) as s:
+    wss.send_binary(s,base64.b64decode(sys.argv[2]))
+    s.settimeout(1)
+    try:
+        print('closed' if wss.read_binary(s) is None else 'data')
+    except socket.timeout:
+        print('pending')
+"""
+            relay_args = [str(Path(__file__).resolve().parent), relay_certificate]
+
         def relay_attempt(role):
             """从指定独立网络命名空间发送相同授权，不输出会话内容。"""
-            args = [sys.executable, "-c", relay_code, relay_address, frame]
+            payload = field(18, field(2, session.encode())) if relay_certificate is not None else framed(field(18, field(2, session.encode())))
+            args = [sys.executable, "-c", relay_code, relay_address, base64.b64encode(payload).decode(), *relay_args]
             if role != 0:
                 namespace_pid = pid if role == 1 else str(json.loads(command("docker", "inspect", container))[0]["State"]["Pid"])
                 args = ["nsenter", "-t", namespace_pid, "-n"] + args
@@ -488,7 +504,6 @@ with socket.create_connection((sys.argv[1],21117),timeout=6) as s:
         require(response.get(5), "强制中继响应缺少签名设备公钥")
         require(db.execute("SELECT source_used,target_used,source_ip,target_ip FROM rustdesk_relay_grant WHERE session_uuid=?", (session,)).fetchone()
                 == (0, 0, grant[2], grant[3]), "强制中继没有先签发双端授权")
-        frame = base64.b64encode(framed(field(18, field(2, session.encode())))).decode()
         for role, expected in ((0, (1, 0)), (1, (1, 1))):
             relay_attempt(role)
             require(db.execute("SELECT source_used,target_used FROM rustdesk_relay_grant WHERE session_uuid=?", (session,)).fetchone() == expected,
@@ -496,6 +511,46 @@ with socket.create_connection((sys.argv[1],21117),timeout=6) as s:
         for role in (0, 1):
             require(relay_attempt(role) == b"closed", "强制中继核销后重放未关闭")
         print("PASS: 强制中继先校验策略并签发，返回加密会话和签名公钥，双端核销及重放拒绝")
+        if relay_certificate is not None:
+            from importlib import import_module
+            wss = import_module("controlled-wss-protocol-acceptance")
+            reply = encrypted(forced, response=True)
+            require(len(reply) == 1 and reply[0][0] == 19, "WSS 双向测试未收到新的中继响应")
+            session = dict(fields(reply[0][1])).get(2, b"").decode()
+            require(str(uuid.UUID(session)) == session, "WSS 双向测试会话格式错误")
+            sessions.append(session)
+            payload = field(18, field(2, session.encode()))
+            challenge, answer = secrets.token_bytes(256), secrets.token_bytes(257)
+            target_code = """import base64,importlib,sys
+sys.dont_write_bytecode = True
+sys.path.insert(0,sys.argv[1])
+wss = importlib.import_module('controlled-wss-protocol-acceptance')
+with wss.websocket(sys.argv[2],21119,sys.argv[3]) as stream:
+    wss.send_binary(stream,base64.b64decode(sys.argv[4]))
+    wss.send_binary(stream,base64.b64decode(sys.argv[5]))
+    wss.require(wss.read_binary(stream) == base64.b64decode(sys.argv[6]), 'WSS 目标未收到源端原始数据')
+print('roundtrip-ok')
+"""
+            child = subprocess.Popen(["nsenter", "-t", pid, "-n", sys.executable, "-c", target_code,
+                                      str(Path(__file__).resolve().parent), relay_address, relay_certificate,
+                                      base64.b64encode(payload).decode(), base64.b64encode(challenge).decode(),
+                                      base64.b64encode(answer).decode()], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            try:
+                with wss.websocket(relay_address, 21119, relay_certificate) as stream:
+                    wss.send_binary(stream, payload)
+                    require(wss.read_binary(stream) == challenge, "WSS 源端未收到目标原始数据")
+                    wss.send_binary(stream, answer)
+                    output, _ = child.communicate(timeout=10)
+                    require(child.returncode == 0 and output.strip() == b"roundtrip-ok", "WSS 目标双向验证失败")
+                require(db.execute("SELECT source_used,target_used FROM rustdesk_relay_grant WHERE session_uuid=?", (session,)).fetchone()
+                        == (1, 1), "WSS 双向传输未完成逐端核销")
+                for role in (0, 1):
+                    require(relay_attempt(role) == b"closed", "WSS 双向传输后重放未关闭")
+            finally:
+                if child.poll() is None:
+                    child.kill()
+                child.communicate(timeout=5)
+            print("PASS: hbbs WSS 真实签发至 hbbr WSS 双端核销、双向二进制传输及重放拒绝（非浏览器远控）")
         audits = db.execute("SELECT result,error_message,before_data,after_data FROM operation_audit WHERE resource_type='rustdesk_admission' AND resource_id IN (?,?)",
                             (device, session)).fetchall()
         # 核销拒绝不返回设备身份；仅在本次专属副本窗口核对匿名审计。
@@ -507,8 +562,9 @@ with socket.create_connection((sys.argv[1],21117),timeout=6) as s:
             require(sum(row[0] == "deny" and row[1] == code for row in rows) >= minimum,
                     "缺少重复请求的真实准入审计：" + code)
         require(sum(row[0] == "allow" for row in audits) >= 18, "缺少三轮准入及五类策略恢复的允许审计")
-        require(all(token not in str(row) for row in audits + consume_audits)
-                and token.encode() not in command("docker", "logs", container), "夹具令牌泄漏到日志或审计")
+        logs = command("docker", "logs", container) + command("docker", "logs", hbbr)
+        require(all(secret not in str(row) for secret in (token, target_token) for row in audits + consume_audits)
+                and all(secret.encode() not in logs for secret in (token, target_token)), "夹具令牌泄漏到日志或审计")
         print("PASS: 重复准入、策略拒绝及并发重放审计数量齐全，日志和审计无原始令牌")
     finally:
         try:
