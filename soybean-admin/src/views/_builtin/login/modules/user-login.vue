@@ -7,6 +7,7 @@ import { fetchCaptcha, fetchLoginConfig, fetchUserLogin } from '@/service/api/au
 import { localStg } from '@/utils/storage';
 import { useAuthStore } from '@/store/modules/auth';
 import { useRouteStore } from '@/store/modules/route';
+import ClientDownload from '@/components/business/client-download.vue';
 
 defineOptions({
   name: 'UserLogin'
@@ -130,6 +131,7 @@ onMounted(() => {
       <NButton attr-type="submit" type="primary" size="medium" round block :loading="loading" @click="handleSubmit">
         {{ $t('common.confirm') }}
       </NButton>
+      <div class="flex-center"><ClientDownload /></div>
       <NButton text type="primary" @click="switchToAdmin">
         {{ $t('page.login.userLogin.switchToAdmin') }}
       </NButton>

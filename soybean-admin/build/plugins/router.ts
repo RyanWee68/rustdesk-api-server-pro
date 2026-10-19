@@ -41,6 +41,7 @@ export function setupElegantRouter() {
       }
 
       const adminOnlyRoutes: RouteKey[] = [
+        'about_downloads',
         'home',
         'user_list',
         'user_sessions',

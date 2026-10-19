@@ -81,7 +81,7 @@ func TestPublicDownloadsRequireChecksums(t *testing.T) {
 // TestPublicDownloadMetadataMatchesConsumers 验证下载页和验收脚本与服务端使用相同摘要。
 func TestPublicDownloadMetadataMatchesConsumers(t *testing.T) {
 	files := []string{
-		filepath.Join("..", "..", "soybean-admin", "src", "views", "about", "downloads", "index.vue"),
+		filepath.Join("..", "..", "soybean-admin", "src", "constants", "downloads.ts"),
 		filepath.Join("..", "..", "scripts", "deploy", "controlled-security-check.sh"),
 	}
 	for _, fileName := range files {

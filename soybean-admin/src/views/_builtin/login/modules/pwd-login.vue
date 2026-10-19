@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router';
 import { $t } from '@/locales';
 import { useNaiveForm } from '@/hooks/common/form';
 import { useAuthStore } from '@/store/modules/auth';
+import ClientDownload from '@/components/business/client-download.vue';
 import {
   fetchCaptcha,
   fetchConfirmClientWebauth,
@@ -268,6 +269,7 @@ onMounted(() => {
       >
         {{ oauthBindingTicket ? '验证并绑定' : $t('common.confirm') }}
       </NButton>
+      <div class="flex-center"><ClientDownload /></div>
       <NButton
         v-if="oauthBindingTicket && oauthAllowCreate"
         attr-type="button"
