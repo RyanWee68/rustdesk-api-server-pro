@@ -1,12 +1,7 @@
-import { addAPIProvider, disableCache } from '@iconify/vue';
+import { addIcon } from '@iconify/vue/offline';
+import icons from 'virtual:offline-icons';
 
-/** Setup the iconify offline */
+/** 注册构建时提取的本地图标。 */
 export function setupIconifyOffline() {
-  const { VITE_ICONIFY_URL } = import.meta.env;
-
-  if (VITE_ICONIFY_URL) {
-    addAPIProvider('', { resources: [VITE_ICONIFY_URL] });
-
-    disableCache('all');
-  }
+  Object.entries(icons).forEach(([name, icon]) => addIcon(name, icon));
 }

@@ -63,6 +63,7 @@
     "release": "sa release",
     "typecheck": "vue-tsc --noEmit --skipLibCheck",
     "test:admission-audit": "node scripts/admission-audit-regression.cjs",
+    "test:offline-icons": "tsx scripts/offline-icons-regression.ts",
     "update-pkg": "sa update-pkg"
   },
   "dependencies": {

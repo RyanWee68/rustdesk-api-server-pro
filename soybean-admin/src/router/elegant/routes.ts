@@ -116,7 +116,7 @@ export const generatedRoutes: GeneratedRoute[] = [
         meta: {
           title: 'audit_baselogs',
           i18nKey: 'route.audit_baselogs',
-          icon: 'hugeicons:files-01',
+          icon: 'mdi:file-document-multiple-outline',
           roles: ['R_SUPER', 'R_USER']
         }
       },

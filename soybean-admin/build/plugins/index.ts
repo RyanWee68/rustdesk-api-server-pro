@@ -7,6 +7,7 @@ import { setupElegantRouter } from './router';
 import { setupUnocss } from './unocss';
 import { setupUnplugin } from './unplugin';
 import { setupHtmlPlugin } from './html';
+import { setupOfflineIcons } from './offline-icons';
 
 export function setupVitePlugins(viteEnv: Env.ImportMeta, buildTime: string) {
   const plugins: PluginOption = [
@@ -19,6 +20,7 @@ export function setupVitePlugins(viteEnv: Env.ImportMeta, buildTime: string) {
     VueDevtools(),
     setupElegantRouter(),
     setupUnocss(viteEnv),
+    setupOfflineIcons(viteEnv.VITE_MENU_ICON),
     ...setupUnplugin(viteEnv),
     progress(),
     setupHtmlPlugin(buildTime)

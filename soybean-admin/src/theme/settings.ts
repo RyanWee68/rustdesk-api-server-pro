@@ -4,7 +4,7 @@ export const themeSettings: App.Theme.ThemeSetting = {
   grayscale: false,
   colourWeakness: false,
   recommendColor: false,
-  glassEffect: true,
+  glassEffect: false,
   glassBlur: 5,
   glassOpacity: 80,
   themeColor: '#646cff',
@@ -90,4 +90,4 @@ export const themeSettings: App.Theme.ThemeSetting = {
  *
  * If publish new version, use `overrideThemeSettings` to override certain theme settings
  */
-export const overrideThemeSettings: Partial<App.Theme.ThemeSetting> = {};
+export const overrideThemeSettings: Partial<App.Theme.ThemeSetting> = { glassEffect: false };

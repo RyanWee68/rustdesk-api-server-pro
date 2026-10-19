@@ -166,8 +166,7 @@ onMounted(async () => {
 
 <style scoped>
 .login-card {
-  background-color: rgb(var(--card-color) / 88%);
+  background-color: rgb(var(--container-bg-color) / 96%);
   box-shadow: 0 20px 55px rgb(0 0 0 / 28%);
-  backdrop-filter: blur(14px);
 }
 </style>
