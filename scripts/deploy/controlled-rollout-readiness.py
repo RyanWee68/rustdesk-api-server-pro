@@ -33,13 +33,15 @@ def read_rollback_units():
     """同时检查已加载的临时单元和磁盘单元，避免漏掉未启用的旧回滚任务。"""
     loaded = read_command(["systemctl", "show", "--all", "--property=Id", "--value", ROLLBACK_PATTERN])
     installed = read_command(["systemctl", "list-unit-files", "--no-legend", "--no-pager",
-                              "--plain", "--full", ROLLBACK_PATTERN])
+                              "--plain", "--full"])
     names = {line.strip() for line in loaded.splitlines() if line.strip()}
     for line in installed.splitlines():
         if line.strip():
             fields = line.split()
             require(2 <= len(fields) <= 3, "回滚单元清单格式无法确认")
-            names.add(fields[0])
+            # 无匹配项时部分 systemd 版本返回 1，因此列全量后仅保留受控回滚单元。
+            if fields[0].startswith("controlled-") and "rollback" in fields[0]:
+                names.add(fields[0])
     require(all(re.fullmatch(r"controlled-[A-Za-z0-9_.@-]*rollback[A-Za-z0-9_.@-]*\.(timer|service)", name)
                 for name in names), "回滚单元名称或清单格式无法确认")
     return sorted(names)
@@ -95,6 +97,7 @@ def self_test():
                  "health": "healthy", "restart_count": 0} for name in CONTAINERS]
     unit = "controlled-tls-contract-rollback-20261017"
     cases = [("normal", "", "", baseline, True),
+             ("unrelated-files", "", "ssh.service enabled enabled\napt-daily.timer enabled enabled\n", baseline, True),
              ("loaded-timer", unit + ".timer\n", "", baseline, False),
              ("loaded-service", unit + ".service\n", "", baseline, False),
              ("disabled-file", "", unit + ".timer disabled enabled\n", baseline, False),
@@ -123,6 +126,8 @@ def self_test():
             require((command[0] == "systemctl" and command[1] in ("show", "list-unit-files"))
                     or (command[0] == "docker" and command[1] == "inspect"), "就绪检查执行了非只读命令")
             require(call.kwargs == {"capture_output": True, "timeout": 15}, "就绪检查丢失输出隔离或超时")
+            if command[:2] == ["systemctl", "list-unit-files"]:
+                require(ROLLBACK_PATTERN not in command, "磁盘单元查询不能因无匹配项误报失败")
     for index in range(3):
         for failure in (OSError("secret"), subprocess.TimeoutExpired("secret", 15),
                         subprocess.CompletedProcess([], 1, b"secret", b"secret"),
