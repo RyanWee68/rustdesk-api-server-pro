@@ -1,5 +1,9 @@
 # 受控 RustDesk 正式切换与回滚
 
+## 16:26 重开窗口
+
+window2 已于 16:23 自动恢复旧双 server；用户要求重开后，从现用下载入口 API `35be96d...` 配置重新完整备份到 `backups/wss-update-20261019-window3`，16:26 更新候选 `009a8e7...`，16:27:36 现用 WSS/管理/API 检查通过，API 容器、原证书、密钥及端口未变。当前保护为 `controlled-wss-update-rollback-20261019-window3.timer`，北京时间 **17:26:39** 自动恢复，人工三次连接反馈待收。需要提前恢复时，只停止 window3 timer 再启动 window3 service；不得重新执行已结束的 window2 恢复。下方 window2 状态与时间仅为历史记录。
+
 ## 2026-10-19 WSS 现用窗口
 
 15:38 已在独立 45 分钟保护下更新 hbbs/hbbr，server 固定 `sha256:009a8e77e509324ac69a187267f80c06dd40fefaa7ad7bf6227dccd31e2e2f78`；API 保留已验性能镜像 `4b4f20d...`，未重建。完整隔离 TCP/WSS 双版本验收、原证书 TLS 1.2/1.3、现用回环 WSS 严格升级/在线拒绝审计/明文拒绝，以及 API 和管理入口检查通过。WSS `22118/22119` 仍仅回环，不增加路由器映射，不计公网或浏览器完整远控通过。
