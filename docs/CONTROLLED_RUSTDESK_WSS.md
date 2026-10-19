@@ -1,5 +1,14 @@
 # 原生 WSS 与浏览器远控
 
+## 2026-10-19 部署窗口
+
+- fork `a8c1c2a` 在 0.211 离线构建为 `sha256:009a8e77e509324ac69a187267f80c06dd40fefaa7ad7bf6227dccd31e2e2f78`，24 项库测试、9 项探针自检及完整双版本 TCP/WSS 隔离三容器验证通过。
+- 原域名证书只读挂入零宿主端口的临时 hbbs/hbbr，TLS 1.2/1.3、SAN、证书摘要、严格升级、错误身份与明文拒绝通过，临时资源清理成功。现用证书和 server 密钥没有轮换。
+- 管理页性能更新验收保留后，重新备份并预检；15:38 仅重建双 server，API 容器未变。现用回环 WSS 受信任升级、在线准入拒绝审计、明文拒绝和全部 API/管理入口检查通过。
+- 独立自动回滚 `controlled-wss-update-rollback-20261019-window2` 截止北京时间 **16:23:27**，备份 `backups/wss-update-20261019-window2`。回滚先保留新 server 数据，再恢复旧 server 数据/配置，不恢复 API 数据、不重启 API。现有桌面客户端远控回归待用户反馈，尚未取消保护或记为最终保留。
+- `22118/22119` 宿主仍仅绑定 `127.0.0.1`，没有新增路由器映射。公网 WSS 与浏览器完整远控仍未通过；浏览器页面继续等待合法发行包。下文“目标尚未部署”是早先历史状态，不覆盖本窗口记录。
+- 本地缓存增量入口为 `docker/Dockerfile.controlled-server-incremental`。上下文仅取固定提交的 `Cargo.toml`、`Cargo.lock`、`build.rs`、`src/`；显式传入本地 `BUILDER_IMAGE`、`RUNTIME_IMAGE`，先核对 builder 的 `libs/hbb_common` 为 `69cea8dafee147848ae88702029f4bf7df7224c3`。使用 `--pull=false --network=none` 离线测试/构建，不带入 `.env`、数据库或私钥，不发布镜像，也不替代从干净上游构建的正式 Dockerfile。
+
 ## 当前范围
 
 2026-10-18 用户确认需要 WSS 与浏览器远控，并优先自托管合法可用的官方 Web 客户端。服务端直接终止 TLS，不新增外部反向代理，也不改造官方桌面客户端。

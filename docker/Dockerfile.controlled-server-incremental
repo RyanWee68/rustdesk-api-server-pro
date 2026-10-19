@@ -1,0 +1,16 @@
+# 仅复用已核对的本地主机缓存，不用于发布镜像。
+ARG BUILDER_IMAGE
+ARG RUNTIME_IMAGE
+FROM ${BUILDER_IMAGE} AS build
+WORKDIR /src/rustdesk-server
+COPY Cargo.toml Cargo.lock build.rs ./
+COPY src/ ./src/
+RUN cargo test --jobs 2 --locked --offline --release --lib
+RUN cargo build --jobs 2 --locked --offline --release --bin hbbs --bin hbbr
+
+FROM ${RUNTIME_IMAGE}
+COPY --from=build /src/rustdesk-server/target/release/hbbs /usr/local/bin/hbbs
+COPY --from=build /src/rustdesk-server/target/release/hbbr /usr/local/bin/hbbr
+RUN ldd /usr/local/bin/hbbs && ldd /usr/local/bin/hbbr \
+    && ! ldd /usr/local/bin/hbbs | grep -q 'not found' \
+    && ! ldd /usr/local/bin/hbbr | grep -q 'not found'
