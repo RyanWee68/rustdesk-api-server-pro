@@ -214,6 +214,15 @@ check_sensitive_logging() {
     fi
 }
 
+check_registration_window() {
+    dir="$1"
+    if contains 'periodic_registration_does_not_extend_rate_window' "$dir/src/rendezvous_server.rs"; then
+        pass "源码包含持续注册、突发限流及窗口恢复回归"
+    else
+        fail "源码缺少注册限流窗口回归，可能遗漏已验收修复"
+    fi
+}
+
 SOURCE_DIR="${1:-${RUSTDESK_SERVER_SOURCE_DIR:-}}"
 
 if [ -z "$SOURCE_DIR" ]; then
@@ -225,6 +234,7 @@ else
         check_api_contract "$SOURCE_DIR"
         check_fail_closed_contract "$SOURCE_DIR"
         check_sensitive_logging "$SOURCE_DIR"
+        check_registration_window "$SOURCE_DIR"
     fi
 fi
 

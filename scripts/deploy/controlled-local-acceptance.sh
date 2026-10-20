@@ -80,8 +80,21 @@ if [ -n "$python_bin" ]; then
     run_required "SQLite 迁移演练自检" "$python_bin" "$ROOT_DIR/scripts/deploy/controlled-sqlite-migration-rehearsal.py" --self-test
     run_required "最终 Compose 配置预检自测" "$python_bin" "$ROOT_DIR/scripts/deploy/controlled-compose-preflight.py" --self-test
     run_required "恢复后主机只读就绪自测" "$python_bin" "$ROOT_DIR/scripts/deploy/controlled-rollout-readiness.py" --self-test
+    run_required "现用 WSS 夹具清理边界自测" "$python_bin" "$ROOT_DIR/scripts/deploy/controlled-live-wss-selftest.py"
+    run_required "hbbs 限定更新与并发保护自测" "$python_bin" "$ROOT_DIR/scripts/deploy/controlled-hbbs-rate-update.py" --self-test
+    run_required "受控端口元信息观察自测" "$python_bin" "$ROOT_DIR/scripts/deploy/controlled-network-observe.py" --self-test
 else
     skip "未检测到可执行的 python3/python，跳过 Python 自测"
+fi
+
+if have_cmd pwsh; then
+    run_required "Windows WSS 外网探针自检" pwsh -NoProfile -File "$ROOT_DIR/scripts/deploy/controlled-wss-external-probe.ps1" -SelfTest
+    run_required "Windows 公网综合探针自检" pwsh -NoProfile -File "$ROOT_DIR/scripts/deploy/controlled-public-external-probe.ps1" -SelfTest
+elif have_cmd powershell.exe; then
+    run_required "Windows WSS 外网探针自检" powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$ROOT_DIR/scripts/deploy/controlled-wss-external-probe.ps1" -SelfTest
+    run_required "Windows 公网综合探针自检" powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$ROOT_DIR/scripts/deploy/controlled-public-external-probe.ps1" -SelfTest
+else
+    skip "未检测到 PowerShell，跳过 Windows WSS 外网探针自检"
 fi
 
 printf '\n[Shell 语法检查]\n'

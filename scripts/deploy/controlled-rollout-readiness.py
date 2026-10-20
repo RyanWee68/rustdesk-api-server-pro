@@ -9,7 +9,8 @@ import sys
 
 
 CONTAINERS = ("rustdesk-api-server-pro", "rustdesk-hbbs-controlled", "rustdesk-hbbr-controlled")
-ROLLBACK_PATTERN = "controlled-*rollback*"
+ROLLBACK_PATTERN = "controlled-*"
+PROTECTION_PATTERN = r"controlled-[A-Za-z0-9_.@-]*(?:rollback|hbbs-rate-|api-relay-|wss-live-cleanup-)[A-Za-z0-9_.@-]*\.(?:timer|service)"
 INSPECT_FORMAT = ('{"name":{{json .Name}},"image":{{json .Image}},'
                   '"running":{{json .State.Running}},'
                   '"health":{{if .State.Health}}{{json .State.Health.Status}}{{else}}null{{end}},'
@@ -40,11 +41,11 @@ def read_rollback_units():
             fields = line.split()
             require(2 <= len(fields) <= 3, "回滚单元清单格式无法确认")
             # 无匹配项时部分 systemd 版本返回 1，因此列全量后仅保留受控回滚单元。
-            if fields[0].startswith("controlled-") and "rollback" in fields[0]:
+            if fields[0].startswith("controlled-"):
                 names.add(fields[0])
-    require(all(re.fullmatch(r"controlled-[A-Za-z0-9_.@-]*rollback[A-Za-z0-9_.@-]*\.(timer|service)", name)
-                for name in names), "回滚单元名称或清单格式无法确认")
-    return sorted(names)
+    require(all(re.fullmatch(r"controlled-[A-Za-z0-9_.@-]*\.(timer|service)", name)
+                for name in names), "保护单元名称或清单格式无法确认")
+    return sorted(name for name in names if re.fullmatch(PROTECTION_PATTERN, name))
 
 
 def inspect_host():
@@ -78,7 +79,7 @@ def main(arguments):
         print(json.dumps(report, ensure_ascii=False, indent=2))
         require(report["ready"], "发现遗留回滚单元或三容器未健康，禁止继续更新；本工具不会自动清理或修复")
         print("PASS: 只读就绪快照通过；仍须核对私有配置差异、备份、公钥、证书及新的自动回滚保护")
-        print("WARN: 仅检查 controlled-*rollback* 系统单元，不覆盖其他命名、用户单元、cron 或外部调度；不是部署许可或业务验收")
+        print("WARN: 仅检查 controlled-* 下的 rollback、hbbs-rate、api-relay 和 wss-live-cleanup 系统单元，不覆盖其他命名、用户单元、cron 或外部调度；不是部署许可或业务验收")
         return 0
     except Exception as error:
         print(str(error) if isinstance(error, RuntimeError)
@@ -100,6 +101,14 @@ def self_test():
              ("unrelated-files", "", "ssh.service enabled enabled\napt-daily.timer enabled enabled\n", baseline, True),
              ("loaded-timer", unit + ".timer\n", "", baseline, False),
              ("loaded-service", unit + ".service\n", "", baseline, False),
+             ("rate-window", "controlled-hbbs-rate-abc.timer\n", "", baseline, False),
+             ("api-relay-window", "controlled-api-relay-abc.timer\n", "", baseline, False),
+             ("api-relay-service", "controlled-api-relay-abc.service\n", "", baseline, False),
+             ("installed-api-relay", "", "controlled-api-relay-abc.timer enabled enabled\n", baseline, False),
+             ("fixture-window", "controlled-wss-live-cleanup-abc.service\n", "", baseline, False),
+             ("installed-rate", "", "controlled-hbbs-rate-abc.timer disabled enabled\n", baseline, False),
+             ("installed-fixture", "", "controlled-wss-live-cleanup-abc.timer enabled enabled\n", baseline, False),
+             ("unrelated-controlled", "controlled-monitor.timer\n", "controlled-monitor.service static -\n", baseline, True),
              ("disabled-file", "", unit + ".timer disabled enabled\n", baseline, False),
              ("masked-file", "", unit + ".service masked -\n", baseline, False),
              ("malformed-units", "", "invalid-format\n", baseline, False),

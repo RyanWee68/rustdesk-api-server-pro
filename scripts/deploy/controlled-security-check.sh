@@ -255,6 +255,7 @@ probe_tcp() {
     fi
     "$json_parser" -c '
 import errno, socket, sys
+import ipaddress
 try:
     timeout = float(sys.argv[3])
     if not 0 < timeout <= 30:
@@ -262,6 +263,13 @@ try:
     addresses = socket.getaddrinfo(sys.argv[1], int(sys.argv[2]), type=socket.SOCK_STREAM)
     if not addresses:
         sys.exit(2)
+    # DNS 代理的合成地址不能作为公网 TCP 开闭证据。
+    for _, _, _, _, address in addresses:
+        ip = ipaddress.ip_address(address[0])
+        if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
+            ip = ip.ipv4_mapped
+        if isinstance(ip, ipaddress.IPv4Address) and ip in ipaddress.ip_network("198.18.0.0/15"):
+            sys.exit(2)
     results = []
     for family, kind, proto, _, address in addresses:
         try:

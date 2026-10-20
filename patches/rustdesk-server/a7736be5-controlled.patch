@@ -1136,7 +1136,7 @@ index de1a7ea..0b9d5b3 100644
          if let Some(msg) = self.next().await {
              match msg {
 diff --git a/src/rendezvous_server.rs b/src/rendezvous_server.rs
-index eaf7190..54d31bb 100644
+index eaf7190..5894c50 100644
 --- a/src/rendezvous_server.rs
 +++ b/src/rendezvous_server.rs
 @@ -1,4 +1,5 @@
@@ -1262,8 +1262,12 @@ index eaf7190..54d31bb 100644
                          if self.inner.serial > rp.serial {
                              let mut msg_out = RendezvousMessage::new();
                              msg_out.set_configure_update(ConfigUpdate {
-@@ -379,6 +420,24 @@ impl RendezvousServer {
-                     } else if !self.check_ip_blocker(&ip, &id).await {
+@@ -376,9 +417,27 @@ impl RendezvousServer {
+                     let ip = addr.ip().to_string();
+                     if id.len() < 6 {
+                         return send_rk_res(socket, addr, UUID_MISMATCH).await;
+-                    } else if !self.check_ip_blocker(&ip, &id).await {
++                    } else if !Self::check_ip_blocker(&ip, &id).await {
                          return send_rk_res(socket, addr, TOO_FREQUENT).await;
                      }
 +                    let registration = self.admission.register_device(&RegisterRequest {
@@ -1466,6 +1470,27 @@ index eaf7190..54d31bb 100644
                          allow_err!(s.send(Bytes::from(bytes)).await);
                      }
                      Sink::Ws(ws) => {
+@@ -909,18 +1078,18 @@ impl RendezvousServer {
+         Ok(())
+     }
+
+-    async fn check_ip_blocker(&self, ip: &str, id: &str) -> bool {
++    async fn check_ip_blocker(ip: &str, id: &str) -> bool {
+         let mut lock = IP_BLOCKER.lock().await;
+         let now = Instant::now();
+         if let Some(old) = lock.get_mut(ip) {
+             let counter = &mut old.0;
+             if counter.1.elapsed().as_secs() > IP_BLOCK_DUR {
+                 counter.0 = 0;
++                counter.1 = now;
+             } else if counter.0 > 30 {
+                 return false;
+             }
+             counter.0 += 1;
+-            counter.1 = now;
+
+             let counter = &mut old.1;
+             let is_new = counter.0.get(id).is_none();
 @@ -1169,56 +1338,84 @@ impl RendezvousServer {
          });
      }
@@ -1590,10 +1615,33 @@ index eaf7190..54d31bb 100644
          (key, out_sk)
      }
  
-@@ -1412,6 +1606,107 @@ async fn create_tcp_listener(bind_addr: Option<IpAddr>, port: i32) -> ResultType
+@@ -1412,6 +1606,130 @@ async fn create_tcp_listener(bind_addr: Option<IpAddr>, port: i32) -> ResultType
  mod tests {
      use super::*;
  
++    #[hbb_common::tokio::test]
++    async fn periodic_registration_does_not_extend_rate_window() {
++        let ip = "192.0.2.251";
++        IP_BLOCKER.lock().await.remove(ip);
++        assert!(RendezvousServer::check_ip_blocker(ip, "test-rate-window").await);
++        let start = IP_BLOCKER.lock().await.get(ip).unwrap().0.1;
++        for _ in 0..31 {
++            assert!(RendezvousServer::check_ip_blocker(ip, "test-rate-window").await);
++        }
++        assert!(!RendezvousServer::check_ip_blocker(ip, "test-rate-window").await);
++        {
++            let mut entries = IP_BLOCKER.lock().await;
++            let counters = entries.get_mut(ip).unwrap();
++            assert_eq!(counters.0.1, start);
++            counters.0.1 = Instant::now() - Duration::from_secs(IP_BLOCK_DUR + 1);
++        }
++        assert!(RendezvousServer::check_ip_blocker(ip, "test-rate-window").await);
++        let renewed = IP_BLOCKER.lock().await.get(ip).unwrap().0;
++        assert_eq!(renewed.0, 1);
++        assert!(renewed.1.elapsed().as_secs() <= 1);
++        IP_BLOCKER.lock().await.remove(ip);
++    }
++
 +    #[hbb_common::tokio::test]
 +    async fn signed_handshake_encrypts_both_directions() {
 +        sodiumoxide::init().unwrap();

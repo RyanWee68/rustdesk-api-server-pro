@@ -29,6 +29,12 @@ jobs:
         run: |
           python3 -B scripts/deploy/controlled-hbbs-protocol-acceptance.py --self-test
           python3 -B scripts/deploy/controlled-wss-protocol-selftest.py
+          python3 -B scripts/deploy/controlled-live-wss-selftest.py
+          python3 -B scripts/deploy/controlled-hbbs-rate-update.py --self-test
+          python3 -B scripts/deploy/controlled-network-observe.py --self-test
+          python3 -B scripts/deploy/controlled-rollout-readiness.py --self-test
+          pwsh -NoProfile -File scripts/deploy/controlled-wss-external-probe.ps1 -SelfTest
+          pwsh -NoProfile -File scripts/deploy/controlled-public-external-probe.ps1 -SelfTest
           python3 -B scripts/deploy/controlled-compose-preflight.py --self-test
 
       - name: 构建受控镜像

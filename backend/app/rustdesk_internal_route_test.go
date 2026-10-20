@@ -73,7 +73,8 @@ func TestRustdeskInternalRouteRequiresSecret(t *testing.T) {
 
 func newInternalRouteTestEngine(t *testing.T) *xorm.Engine {
 	t.Helper()
-	engine, err := xorm.NewEngine("sqlite", "file:rustdesk_internal_route_"+t.Name()+"?mode=memory&cache=shared")
+	// 固定单连接，无须共享命名缓存，避免重复运行复用残留测试数据。
+	engine, err := xorm.NewEngine("sqlite", ":memory:")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -550,6 +550,40 @@ else
     REAL_PYTHON="$(command -v python)"
 fi
 export REAL_PYTHON
+"$REAL_PYTHON" - "$ROOT_DIR/scripts/deploy/controlled-security-check.sh" <<'PY'
+import errno
+from pathlib import Path
+import re
+import socket
+import sys
+from unittest.mock import MagicMock, patch
+
+source = Path(sys.argv[1]).read_text(encoding="utf-8")
+match = re.search(r"(?m)^import errno, socket, sys\n.*?(?=^' \"\$1\")", source, re.S)
+assert match, "ERR-2394 未找到实际 TCP 探针"
+code = compile(match.group(), "tcp-probe", "exec")
+for address, error, expected, called in (
+    ("198.18.0.114", 0, 2, False),
+    ("198.19.255.254", 0, 2, False),
+    ("::ffff:198.18.0.114", 0, 2, False),
+    ("171.217.92.118", 0, 0, True),
+    ("171.217.92.118", errno.ECONNREFUSED, 1, True),
+    ("171.217.92.118", errno.ETIMEDOUT, 2, True),
+):
+    connection = MagicMock()
+    connection.__enter__.return_value.connect_ex.return_value = error
+    with patch.object(sys, "argv", ["probe", "public.test", "22116", "1"]), \
+         patch.object(socket, "getaddrinfo", return_value=[(socket.AF_INET, socket.SOCK_STREAM, 0, "", (address, 22116))]), \
+         patch.object(socket, "socket", return_value=connection) as create:
+        try:
+            exec(code, {})
+        except SystemExit as result:
+            assert result.code == expected, "ERR-2394 TCP 探针结论错误"
+        else:
+            raise AssertionError("ERR-2394 TCP 探针缺少退出状态")
+        assert create.called == called, "ERR-2394 合成地址仍发起 TCP 连接"
+print("PASS: 实际 TCP 探针拒绝合成 DNS，开放、明确拒绝及超时保持区分")
+PY
 cat > "$FAKE_BIN/python3" <<'EOF'
 #!/bin/sh
 case "${2:-}" in

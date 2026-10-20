@@ -57,7 +57,7 @@ func (c *RustdeskController) PostRelayGrantConsume() mvc.Result {
 	if err := c.Ctx.ReadJSON(&req); err != nil {
 		return c.internalError(err)
 	}
-	resp, err := c.service().ConsumeRelayGrant(req)
+	resp, err := c.service().ConsumeRelayGrant(c.Ctx.Request().Context(), req)
 	return c.resultWithAudit("rustdesk_internal_relay_grant_consume", resp.DeviceID, iris.Map{
 		"peer_ip": req.PeerIP, "has_session_uuid": strings.TrimSpace(req.SessionUUID) != "",
 	}, resp, err)

@@ -10,6 +10,7 @@ on:
       - "docker/**"
       - "scripts/deploy/controlled-*.sh"
       - "scripts/deploy/controlled-*.py"
+      - "scripts/deploy/controlled-*.ps1"
       - "templates/rustdesk-server-controlled/**"
       - "patches/rustdesk-server/**"
       - "Dockerfile.controlled"
@@ -26,6 +27,7 @@ on:
       - "docker/**"
       - "scripts/deploy/controlled-*.sh"
       - "scripts/deploy/controlled-*.py"
+      - "scripts/deploy/controlled-*.ps1"
       - "templates/rustdesk-server-controlled/**"
       - "patches/rustdesk-server/**"
       - "Dockerfile.controlled"
@@ -188,8 +190,15 @@ jobs:
       - name: 后端测试与构建
         working-directory: backend
         run: |
-          go test ./...
+          go test ./... -count=1
+          go vet ./...
           go build -o "${RUNNER_TEMP}/rustdesk-api-server-pro" .
+
+      - name: 中继授权并发与请求入口竞争回归
+        working-directory: backend
+        env:
+          CGO_ENABLED: "1"
+        run: go test -race ./internal/service ./app -run '^(TestRelayGrant|TestRustdeskRelayGrantRoute)' -count=5 -timeout=5m
 
       - name: 前端类型检查与构建
         working-directory: soybean-admin

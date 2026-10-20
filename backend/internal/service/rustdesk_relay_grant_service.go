@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"net"
 	"strings"
 	"time"
@@ -13,6 +14,10 @@ import (
 )
 
 const relayGrantLifetime = 30 * time.Second
+
+const relayGrantIssueWait = time.Second
+
+var relayGrantWaiters = make(chan struct{}, 32)
 
 // IssueRelayGrant 在双方准入通过后登记一次短时中继会话。
 func (s *RustdeskAdmissionService) IssueRelayGrant(req core.RustdeskRelayGrantIssueRequest) (core.RustdeskAdmissionResponse, error) {
@@ -68,14 +73,13 @@ func (s *RustdeskAdmissionService) IssueRelayGrant(req core.RustdeskRelayGrantIs
 }
 
 // ConsumeRelayGrant 核销一端中继连接，并在每次核销时重新检查授权。
-func (s *RustdeskAdmissionService) ConsumeRelayGrant(req core.RustdeskRelayGrantConsumeRequest) (core.RustdeskAdmissionResponse, error) {
+func (s *RustdeskAdmissionService) ConsumeRelayGrant(ctx context.Context, req core.RustdeskRelayGrantConsumeRequest) (core.RustdeskAdmissionResponse, error) {
 	sessionUUID := strings.TrimSpace(req.SessionUUID)
 	peerIP := canonicalRelayIP(req.PeerIP)
 	if !validRelaySessionUUID(sessionUUID) || peerIP == "" {
 		return deny(errcode.ERR2315), nil
 	}
-	var grant model.RustdeskRelayGrant
-	has, err := s.db.Where("session_uuid = ?", sessionUUID).Get(&grant)
+	grant, has, err := s.waitRelayGrant(ctx, sessionUUID)
 	if err != nil {
 		return core.RustdeskAdmissionResponse{}, err
 	}
@@ -136,6 +140,47 @@ func (s *RustdeskAdmissionService) ConsumeRelayGrant(req core.RustdeskRelayGrant
 	targetResp.SourceDeviceID = source.RustdeskId
 	targetResp.Policy.ExpireAt = minNonZeroUnix(sourceResp.Policy.ExpireAt, targetResp.Policy.ExpireAt)
 	return targetResp, nil
+}
+
+// waitRelayGrant 仅为尚未签发的会话短暂等待，兼容被控端先连 hbbr 的跨连接时序。
+func (s *RustdeskAdmissionService) waitRelayGrant(ctx context.Context, sessionUUID string) (model.RustdeskRelayGrant, bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, relayGrantIssueWait)
+	defer cancel()
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+	waiting := false
+	defer func() {
+		if waiting {
+			<-relayGrantWaiters
+		}
+	}()
+	for {
+		var grant model.RustdeskRelayGrant
+		if ctx.Err() != nil {
+			return grant, false, nil
+		}
+		has, err := s.db.Context(ctx).Where("session_uuid = ?", sessionUUID).Get(&grant)
+		if ctx.Err() != nil {
+			return model.RustdeskRelayGrant{}, false, nil
+		}
+		if err != nil || has {
+			return grant, has, err
+		}
+		if !waiting {
+			select {
+			case relayGrantWaiters <- struct{}{}:
+				waiting = true
+			default:
+				return grant, false, nil
+			}
+		}
+		// 等待期间不持有数据库事务；签发完成后仍走完整权限检查及原子核销。
+		select {
+		case <-ctx.Done():
+			return grant, false, nil
+		case <-ticker.C:
+		}
+	}
 }
 
 // canonicalRelayIP 将 hbbs/hbbr 观察到的地址统一为纯 IP 文本。

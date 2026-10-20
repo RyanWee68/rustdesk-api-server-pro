@@ -172,14 +172,39 @@ func TestRustdeskRelayGrantRoute(t *testing.T) {
 	if status, resp := post("/internal/rustdesk/relay/grant/consume", consume, true); status != http.StatusOK || resp.Allow || resp.Code != "ERR-2315" {
 		t.Fatalf("未签发仍可核销：%d %+v", status, resp)
 	}
+	// 被控端先到时保留请求，随后由另一条 HTTP 连接完成授权签发。
+	data, err := json.Marshal(core.RustdeskRelayGrantConsumeRequest{SessionUUID: sessionUUID, PeerIP: issue.TargetIP})
+	if err != nil {
+		t.Fatal(err)
+	}
+	early := httptest.NewRequest(http.MethodPost, "/internal/rustdesk/relay/grant/consume", bytes.NewReader(data))
+	early.Header.Set("Content-Type", "application/json")
+	early.Header.Set("X-Internal-Secret", secret)
+	result := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		out := httptest.NewRecorder()
+		application.ServeHTTP(out, early)
+		result <- out
+	}()
+	select {
+	case <-result:
+		t.Fatal("签发之前核销请求过早返回")
+	case <-time.After(75 * time.Millisecond):
+	}
 	if status, resp := post("/internal/rustdesk/relay/grant/issue", issue, true); status != http.StatusOK || !resp.Allow {
 		t.Fatalf("签发失败：%d %+v", status, resp)
 	}
-	for _, peerIP := range []string{issue.SourceIP, issue.TargetIP} {
-		consume.PeerIP = peerIP
-		if status, resp := post("/internal/rustdesk/relay/grant/consume", consume, true); status != http.StatusOK || !resp.Allow {
-			t.Fatalf("核销失败：%d %+v", status, resp)
+	select {
+	case out := <-result:
+		var resp core.RustdeskAdmissionResponse
+		if err := json.Unmarshal(out.Body.Bytes(), &resp); err != nil || out.Code != http.StatusOK || !resp.Allow {
+			t.Fatalf("先到的核销请求失败：%d %+v %v", out.Code, resp, err)
 		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("HTTP 核销等待未按时结束")
+	}
+	if status, resp := post("/internal/rustdesk/relay/grant/consume", consume, true); status != http.StatusOK || !resp.Allow {
+		t.Fatalf("核销失败：%d %+v", status, resp)
 	}
 	var audits []model.OperationAudit
 	if err := db.Where("action = ? or action = ?", "rustdesk_internal_relay_grant_issue", "rustdesk_internal_relay_grant_consume").Find(&audits); err != nil {
