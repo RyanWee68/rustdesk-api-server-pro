@@ -747,6 +747,74 @@ if PATH="$FAKE_BIN:$PATH" CONTROLLED_INDEPENDENT_HOST=1 \
 fi
 grep -q 'ERR-2397 目标使用来源 Docker 守护进程' "$WORK_DIR/offline-same-host.log" || fail "同机拒绝缺少 ERR-2397"
 
+OFFLINE_ROOT="$WORK_DIR/offline-root"
+mkdir -p "$OFFLINE_ROOT/scripts/deploy"
+touch "$OFFLINE_ROOT/docker-compose.controlled-three-isolated.yaml"
+cat > "$OFFLINE_ROOT/scripts/deploy/controlled-three-compose-smoke.sh" <<'EOF'
+#!/bin/sh
+printf 'smoke\n' >> "$MOCK_OFFLINE_LOG"
+[ "$RUSTDESK_API_IMAGE" = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" ] || exit 92
+[ "$RUSTDESK_CONTROLLED_SERVER_IMAGE" = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ] || exit 92
+[ "$MOCK_OFFLINE_MODE" != smoke-error ]
+EOF
+cat > "$FAKE_BIN/docker" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" >> "$MOCK_OFFLINE_LOG"
+case "$1 $2" in
+    'info --format') printf 'independent-test-daemon\n' ;;
+    'image ls')
+        [ "$MOCK_OFFLINE_MODE" != inventory-error ] || exit 1
+        if [ "$MOCK_OFFLINE_MODE" = existing ]; then
+            printf 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n'
+        fi
+        ;;
+    'image load')
+        [ "$MOCK_OFFLINE_MODE" != load-error ] || exit 1
+        touch "$MOCK_OFFLINE_STATE"
+        ;;
+    'image inspect')
+        [ -f "$MOCK_OFFLINE_STATE" ] || exit 1
+        if [ "$MOCK_OFFLINE_MODE" = id-mismatch ]; then
+            printf 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\n'
+        else
+            printf '%s\n' "$5"
+        fi
+        ;;
+    *) exit 93 ;;
+esac
+EOF
+chmod +x "$FAKE_BIN/docker"
+for mode in inventory-error existing load-error id-mismatch smoke-error success; do
+    log="$WORK_DIR/offline-$mode-commands.log"
+    output="$WORK_DIR/offline-$mode-result.log"
+    state="$WORK_DIR/offline-$mode-loaded"
+    if MOCK_OFFLINE_LOG="$log" MOCK_OFFLINE_STATE="$state" MOCK_OFFLINE_MODE="$mode" \
+        PATH="$FAKE_BIN:$PATH" CONTROLLED_INDEPENDENT_HOST=1 \
+        sh "$ROOT_DIR/scripts/deploy/controlled-offline-import-acceptance.sh" "$OFFLINE_DIR" "$OFFLINE_ROOT" >"$output" 2>&1; then
+        [ "$mode" = success ] || fail "离线导入错误被当作成功：$mode"
+    else
+        [ "$mode" != success ] || fail "离线导入模拟成功流程失败"
+        grep -q 'ERR-2397' "$output" || fail "离线导入失败缺少明确错误码：$mode"
+        if grep -q 'PASS: 独立主机离线导入与三容器完整验收通过' "$output"; then
+            fail "离线导入失败后仍输出完整通过：$mode"
+        fi
+    fi
+    case "$mode" in
+        inventory-error|existing)
+            grep -q 'ERR-2397' "$output" || fail "镜像清单拒绝缺少错误码：$mode"
+            if grep -Eq '^image load|^smoke$' "$log"; then fail "镜像清单失败后仍执行导入：$mode"; fi
+            ;;
+        load-error|id-mismatch)
+            grep -q 'ERR-2397' "$output" || fail "导入失败缺少错误码：$mode"
+            if grep -q '^smoke$' "$log"; then fail "导入或 ID 核对失败后仍执行验收：$mode"; fi
+            ;;
+        smoke-error|success)
+            grep -q '^smoke$' "$log" || fail "离线导入未调用后续验收：$mode"
+            ;;
+    esac
+done
+pass "离线导入清单故障、已有镜像、导入失败、ID 不符及后续验收完整流程回归"
+
 cp "$OFFLINE_DIR/SHA256SUMS" "$WORK_DIR/SHA256SUMS.good"
 if [ "$CAN_VERIFY_POSIX_MODE" -eq 1 ]; then
     for linked_file in SHA256SUMS controlled-images.tar images.env source-docker-id; do

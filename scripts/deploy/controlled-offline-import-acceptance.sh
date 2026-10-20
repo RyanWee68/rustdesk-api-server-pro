@@ -101,8 +101,10 @@ TARGET_DOCKER_ID="$(docker info --format '{{.ID}}' 2>/dev/null)" || fail "无法
 [ -f "$ROOT_DIR/scripts/deploy/controlled-three-compose-smoke.sh" ] || fail "找不到三容器验收脚本"
 [ -f "$ROOT_DIR/docker-compose.controlled-three-isolated.yaml" ] || fail "找不到三容器隔离 Compose"
 
+# 必须先成功读取完整清单，不能把守护进程故障当作镜像不存在。
+existing_images="$(docker image ls --all --quiet --no-trunc 2>/dev/null)" || fail "无法读取目标镜像清单，拒绝导入"
 for image in "$API_IMAGE" "$SERVER_IMAGE"; do
-    if docker image inspect "$image" >/dev/null 2>&1; then
+    if printf '%s\n' "$existing_images" | grep -Fxq "$image"; then
         fail "独立主机在导入前已存在候选镜像：$image"
     fi
 done
@@ -115,5 +117,5 @@ done
 printf 'PASS: 独立主机离线镜像导入及 ID 核对通过\n'
 
 RUSTDESK_API_IMAGE="$API_IMAGE" RUSTDESK_CONTROLLED_SERVER_IMAGE="$SERVER_IMAGE" \
-    sh "$ROOT_DIR/scripts/deploy/controlled-three-compose-smoke.sh" "$ROOT_DIR"
+    sh "$ROOT_DIR/scripts/deploy/controlled-three-compose-smoke.sh" "$ROOT_DIR" || fail "独立主机三容器验收失败"
 printf 'PASS: 独立主机离线导入与三容器完整验收通过\n'

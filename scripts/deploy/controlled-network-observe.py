@@ -26,7 +26,7 @@ def metadata(packet):
         return None
     if protocol == 6:
         tcp_size = (packet[size + 12] >> 4) * 4
-        if tcp_size < 20 or size + tcp_size > total:
+        if tcp_size < 20 or size + tcp_size > total or len(packet) < size + tcp_size:
             return None
     elif struct.unpack_from("!H", packet, size + 4)[0] != total - size:
         return None
@@ -83,6 +83,14 @@ def self_test():
     tcp = bytearray(packet(6, "203.0.113.9", HOST, 40000, 22117))
     tcp[33] = 2
     assert metadata(tcp)["tcp_flags"] == 2
+    # TCP 选项属于头部，截断时不能用未完整捕获的头作为取证依据。
+    options = bytearray(tcp + bytes(40))
+    struct.pack_into("!H", options, 2, len(options))
+    options[32] = 0xf0
+    assert metadata(options)["tcp_flags"] == 2
+    assert metadata(options[:40]) is None
+    assert metadata(options[:-1]) is None
+    assert metadata(options + b"secret-payload") == metadata(options)
     assert metadata(inbound + b"secret-payload") == metadata(inbound)
     for bad in (inbound[:27], b"", packet(17, "203.0.113.9", HOST, 40000, 21116),
                 packet(17, "203.0.113.9", "192.168.21.251", 40000, 22116),
@@ -99,6 +107,9 @@ def self_test():
     struct.pack_into("!H", large, 2, len(large))
     struct.pack_into("!H", large, 24, len(large) - 20)
     assert metadata(large[:80])["ip_length"] == len(large)
+    large_tcp = bytearray(options + bytes(256))
+    struct.pack_into("!H", large_tcp, 2, len(large_tcp))
+    assert metadata(large_tcp[:80])["ip_length"] == len(large_tcp)
     print("PASS metadata-only self-test")
 
 
