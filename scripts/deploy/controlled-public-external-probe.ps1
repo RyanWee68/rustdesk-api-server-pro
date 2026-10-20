@@ -6,9 +6,24 @@ Set-StrictMode -Version 2
 # 基准测试网段常被 DNS 代理用于合成地址，不可当公网端口证据。
 function Test-SyntheticDns([string[]]$Addresses) {
     foreach ($address in $Addresses) {
-        if ($address -match '^(::ffff:)?198\.(18|19)\.') { return $true }
+        $ip = $null
+        if (-not [Net.IPAddress]::TryParse($address, [ref]$ip)) { return $true }
+        if ($ip.IsIPv4MappedToIPv6) { $ip = $ip.MapToIPv4() }
+        $bytes = $ip.GetAddressBytes()
+        if ($ip.AddressFamily -eq [Net.Sockets.AddressFamily]::InterNetwork -and
+            $bytes[0] -eq 198 -and $bytes[1] -in @(18, 19)) { return $true }
     }
     return $false
+}
+
+# TCP 与 UDP 固定使用同一次 DNS 结果；IPv6 路径另行验收。
+function Get-ProbeAddress([string[]]$Addresses) {
+    if (Test-SyntheticDns $Addresses) { return $null }
+    foreach ($address in $Addresses) {
+        $ip = [Net.IPAddress]::Parse($address)
+        if ($ip.AddressFamily -eq [Net.Sockets.AddressFamily]::InterNetwork) { return $ip.ToString() }
+    }
+    return $null
 }
 
 # 将网络错误保守归类；只有明确拒绝才证明本次连接未开放。
@@ -19,11 +34,16 @@ function Get-PortState($ErrorCode) {
 }
 
 # 连接固定公开主机，超时和解析失败不冒充关闭。
-function Test-PublicPort([int]$Port) {
-    $client = [System.Net.Sockets.TcpClient]::new()
+function Test-PublicPort([int]$Port, [string]$Address) {
+    $ip = $null
+    if ($Port -notin @(22115, 22116, 22117, 22345, 22346, 12345, 12346, 22347) -or
+        -not [Net.IPAddress]::TryParse($Address, [ref]$ip) -or
+        $ip.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetwork -or
+        (Test-SyntheticDns @($Address))) { throw 'ERR-2394 TCP 检查目标无效' }
+    $client = [System.Net.Sockets.TcpClient]::new([Net.Sockets.AddressFamily]::InterNetwork)
     $pending = $null
     try {
-        $pending = $client.BeginConnect('rustdesk.jtzxsoft.com', $Port, $null, $null)
+        $pending = $client.BeginConnect($ip, $Port, $null, $null)
         if (-not $pending.AsyncWaitHandle.WaitOne(4000)) { return 'unknown' }
         $client.EndConnect($pending)
         return 'open'
@@ -150,7 +170,19 @@ function Test-ProbeSelf {
     try { $null = New-UdpHeartbeat 'bad' } catch { $rejected = $true }
     if (-not $rejected) { throw 'ERR-2394 UDP 标识边界未拒绝' }
     if (-not (Test-SyntheticDns @('198.18.0.114')) -or -not (Test-SyntheticDns @('::ffff:198.19.255.254')) -or
+        -not (Test-SyntheticDns @('::ffff:c612:0072')) -or -not (Test-SyntheticDns @('invalid')) -or
         (Test-SyntheticDns @('171.217.92.118', '198.20.0.1'))) { throw 'ERR-2394 合成 DNS 识别自测失败' }
+    if ((Get-ProbeAddress @('2001:db8::1', '203.0.113.9')) -ne '203.0.113.9' -or
+        $null -ne (Get-ProbeAddress @('203.0.113.9', '::ffff:c613:0001')) -or
+        $null -ne (Get-ProbeAddress @('2001:db8::1')) -or
+        $null -ne (Get-ProbeAddress @())) { throw 'ERR-2394 固定探测地址自测失败' }
+    foreach ($target in @(@(21116, '203.0.113.9'), @(22116, '198.18.0.1'),
+        @(22116, '::ffff:c612:1'), @(22116, '2001:db8::1'), @(22116, 'invalid'))) {
+        $rejected = $false
+        try { $null = Test-PublicPort $target[0] $target[1] }
+        catch { $rejected = $_.Exception.Message -eq 'ERR-2394 TCP 检查目标无效' }
+        if (-not $rejected) { throw 'ERR-2394 TCP 目标边界自测失败' }
+    }
     foreach ($case in @(
         @('health', '{"ok":true,"service":"rustdesk-api-server-pro"}', $true),
         @('health', '{"ok":"true","service":"rustdesk-api-server-pro"}', $false),
@@ -205,30 +237,31 @@ try {
     $script:checks = [Collections.Generic.List[object]]::new()
     $started = [DateTime]::UtcNow.ToString('o')
     $addresses = @()
+    $probeAddress = $null
     $tcpUsable = $false
     try {
         $dns = [Net.Dns]::GetHostAddressesAsync('rustdesk.jtzxsoft.com')
         if (-not $dns.Wait(4000)) { throw 'ERR-2394 DNS 超时' }
         $addresses = @($dns.Result | ForEach-Object { $_.IPAddressToString })
-        $tcpUsable = $addresses.Count -gt 0 -and -not (Test-SyntheticDns $addresses)
-        Add-ProbeResult 'dns-no-synthetic-address' $tcpUsable 'synthetic-dns-invalidates-tcp-evidence'
+        $probeAddress = Get-ProbeAddress $addresses
+        $tcpUsable = $null -ne $probeAddress
+        Add-ProbeResult 'dns-no-synthetic-address' ($addresses.Count -gt 0 -and -not (Test-SyntheticDns $addresses)) 'synthetic-dns-invalidates-tcp-evidence'
     } catch { Add-ProbeResult 'dns-no-synthetic-address' $false 'dns-unconfirmed' }
     foreach ($port in @(22115, 22116, 22117, 22345, 22346)) {
         $state = 'unknown'
-        if ($tcpUsable) { $state = Test-PublicPort $port }
+        if ($tcpUsable) { $state = Test-PublicPort $port $probeAddress }
         Add-ProbeResult "tcp-$port-open" ($state -eq 'open') $state
     }
     # 21115–21119 属于用户保留的独立正式服务，不要求关闭。
     foreach ($port in @(12345, 12346, 22347)) {
         $state = 'unknown'
-        if ($tcpUsable) { $state = Test-PublicPort $port }
+        if ($tcpUsable) { $state = Test-PublicPort $port $probeAddress }
         Add-ProbeResult "tcp-$port-closed" ($state -eq 'refused') $state
     }
-    $ipv4 = @($addresses | Where-Object { ([Net.IPAddress]::Parse($_)).AddressFamily -eq [Net.Sockets.AddressFamily]::InterNetwork })
     foreach ($attempt in 1..3) {
         try {
-            if (-not $tcpUsable -or $ipv4.Count -eq 0) { throw 'ERR-2394 UDP DNS 不可用' }
-            Add-ProbeResult "udp-22116-heartbeat-$attempt" (Test-PublicUdp $ipv4[0]) 'request-public-key-response-required'
+            if (-not $tcpUsable) { throw 'ERR-2394 UDP DNS 不可用' }
+            Add-ProbeResult "udp-22116-heartbeat-$attempt" (Test-PublicUdp $probeAddress) 'request-public-key-response-required'
         } catch { Add-ProbeResult "udp-22116-heartbeat-$attempt" $false 'udp-response-unconfirmed' }
     }
     foreach ($name in @('health', 'login-options')) {
@@ -271,11 +304,12 @@ try {
         schema = 1; started_utc = $started; finished_utc = [DateTime]::UtcNow.ToString('o')
         host = 'rustdesk.jtzxsoft.com'; checks = @($checks.ToArray()); failed = $failed
         dns_addresses = $addresses; tcp_observation_usable = $tcpUsable
+        transport_probe_address = $probeAddress
         excluded_tcp_ports = @(21115, 21116, 21117, 21118, 21119)
         exclusion_reason = 'user-confirmed-separate-official-production-server'
         external_network_human_confirmation = $false
         udp_probe = 'unregistered-heartbeat-no-device-write'
-        not_verified = @('independent-network-origin', 'udp-authenticated-registration-and-nat-switch', 'internal-auth', 'client-login-and-remote', 'windows-install-and-launch', 'browser-remote')
+        not_verified = @('ipv6-path', 'independent-network-origin', 'udp-authenticated-registration-and-nat-switch', 'internal-auth', 'client-login-and-remote', 'windows-install-and-launch', 'browser-remote')
     }
     $file = Join-Path $OutputDirectory ('controlled-public-result-' + [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssfffZ') + '.json')
     $report | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $file -Encoding UTF8

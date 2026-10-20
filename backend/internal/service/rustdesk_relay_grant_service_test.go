@@ -185,6 +185,65 @@ func TestRelayGrantDatabaseFailure(t *testing.T) {
 	}
 }
 
+// TestRelayGrantWaitDatabaseFailure 校验等待期间数据库故障会释放名额并返回错误。
+func TestRelayGrantWaitDatabaseFailure(t *testing.T) {
+	svc, req := newRelayGrantFixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	result := make(chan error, 1)
+	go func() {
+		_, err := svc.ConsumeRelayGrant(ctx, core.RustdeskRelayGrantConsumeRequest{SessionUUID: req.SessionUUID, PeerIP: req.TargetIP})
+		result <- err
+	}()
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for len(relayGrantWaiters) == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if len(relayGrantWaiters) == 0 {
+		cancel()
+		<-result
+		t.Fatal("请求未进入等待阶段")
+	}
+	if err := svc.db.Close(); err != nil {
+		cancel()
+		<-result
+		t.Fatal(err)
+	}
+	select {
+	case err := <-result:
+		if err == nil {
+			t.Fatal("等待期间数据库故障未返回错误")
+		}
+	case <-ctx.Done():
+		<-result
+		t.Fatal("等待期间数据库故障未及时结束")
+	}
+	if len(relayGrantWaiters) != 0 {
+		t.Fatal("等待期间数据库故障未释放等待名额")
+	}
+}
+
+// TestRelayGrantWaitExpiryAllowsLaterIssue 校验完整等待超时不预占晚到授权的双端核销。
+func TestRelayGrantWaitExpiryAllowsLaterIssue(t *testing.T) {
+	svc, req := newRelayGrantFixture(t)
+	started := time.Now()
+	got, err := svc.ConsumeRelayGrant(context.Background(), core.RustdeskRelayGrantConsumeRequest{SessionUUID: req.SessionUUID, PeerIP: req.TargetIP})
+	if err != nil || got.Allow || got.Code != errcode.ERR2315.Code || time.Since(started) < relayGrantIssueWait {
+		t.Fatalf("无授权会话未按等待上限拒绝：%+v %v", got, err)
+	}
+	if len(relayGrantWaiters) != 0 {
+		t.Fatal("等待超时后未释放名额")
+	}
+	if got, err := svc.IssueRelayGrant(req); err != nil || !got.Allow {
+		t.Fatalf("等待超时影响后续签发：%+v %v", got, err)
+	}
+	for _, ip := range []string{req.SourceIP, req.TargetIP} {
+		if got, err := svc.ConsumeRelayGrant(context.Background(), core.RustdeskRelayGrantConsumeRequest{SessionUUID: req.SessionUUID, PeerIP: ip}); err != nil || !got.Allow {
+			t.Fatalf("等待超时占用后续核销：%+v %v", got, err)
+		}
+	}
+}
+
 // TestRelayGrantDelayedGrantRevalidation 校验等待后到达的授权仍需通过当前权限和会话校验。
 func TestRelayGrantDelayedGrantRevalidation(t *testing.T) {
 	for _, tc := range []struct {
