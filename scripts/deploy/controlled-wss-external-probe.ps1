@@ -65,14 +65,18 @@ public static class ControlledWssProbe {
     static Dictionary<int,object> Body(byte[] b, int n) {
         var d = Fields(b); Need(d.Count == 1 && d.ContainsKey(n), "业务响应类型不符"); return Fields(Bytes(d,n));
     }
-    /// <summary>提取规范 UUID，避免复用无效会话。</summary>
+    /// <summary>仅接受服务端契约中的规范 UUID v4。</summary>
     static string Session(Dictionary<int,object> d) {
         string s = Encoding.UTF8.GetString(Bytes(d,2)); Guid g;
-        Need(Guid.TryParseExact(s,"D",out g) && g.ToString("D") == s, "中继会话编号无效"); return s;
+        Need(Guid.TryParseExact(s,"D",out g) && g.ToString("D") == s && s[14] == '4', "中继会话编号无效"); return s;
+    }
+    /// <summary>直连受控入口，避免系统代理混淆独立外网来源证据。</summary>
+    static ClientWebSocket DirectSocket() {
+        var w = new ClientWebSocket(); w.Options.Proxy = null; return w;
     }
     /// <summary>使用默认系统证书验证连接固定的受控 WSS 入口。</summary>
     static ClientWebSocket Connect(int port) {
-        var w = new ClientWebSocket();
+        var w = DirectSocket();
         try { using (var c = new CancellationTokenSource(10000)) w.ConnectAsync(new Uri("wss://rustdesk.jtzxsoft.com:" + port + "/"), c.Token).GetAwaiter().GetResult(); return w; }
         catch { w.Dispose(); throw; }
     }
@@ -169,9 +173,12 @@ public static class ControlledWssProbe {
         foreach(byte[] bad in new byte[][]{new byte[]{0},new byte[]{10,2,1},new byte[]{10,0,10,0},new byte[]{15},new byte[]{255,255,255,255,255,255,255,255,255,2}}) {
             bool failed=false; try{Fields(bad);}catch{failed=true;} Need(failed,"畸形协议未拒绝");
         }
-        foreach(string s in new string[]{"bad","00000000000000000000000000000000","00000000-0000-0000-0000-00000000000Z"}) {
+        string session = "12345678-1234-4234-8234-123456789abc";
+        Need(Session(Fields(Field(2,Text(session)))) == session,"UUID v4 会话往返错误");
+        foreach(string s in new string[]{"bad","00000000000000000000000000000000","00000000-0000-0000-0000-00000000000Z","00000000-0000-0000-0000-000000000000","12345678-1234-1234-8234-123456789abc","12345678-1234-5234-8234-123456789abc",session.ToUpperInvariant()}) {
             bool failed=false; try{Session(Fields(Field(2,Text(s))));}catch{failed=true;} Need(failed,"会话编号未拒绝");
         }
+        using (var w = DirectSocket()) Need(w.Options.Proxy == null && w.State == WebSocketState.None,"直连 WSS 配置错误");
         bool expired=false; try{Alive(DateTime.UtcNow.AddSeconds(-1));}catch{expired=true;} Need(expired,"过期窗口未拒绝");
         Need(Hash(new byte[]{1}).Length==32,"随机消息摘要错误");
     }
