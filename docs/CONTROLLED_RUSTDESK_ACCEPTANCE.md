@@ -5,7 +5,7 @@
 - 本人 API 仓库工作分支已提交并推送 `145768f6740cabbb68678bbdcdfb02f68cb2c877`，25 文件，不含并行前端、本地结果或临时文件，未合并 main、未部署或发布镜像。
 - [CI 39394386028](https://github.com/RyanWee68/rustdesk-api-server-pro/actions/runs/39394386028) 检查该 SHA，最终 conclusion=success，Rust 模板、acceptance、server-fork、real-three-containers 四作业全部成功；后端全量/静态检查、Linux `-race` 五轮及综合/Compose/临时 API 回归成功。竞争检测于北京时间 16:36:37–16:37:49 运行通过，不能再列为“尚未实际运行”。
 - 三容器作业的真实镜像构建、前端增量镜像契约、最终 Compose 预检及协议/故障/持久化步骤均 success。日志确认真实 hbbs 签发至 hbbr 双端核销与重放拒绝、受信任 WSS 双向数据及 API 故障/恢复，测试身份与来源容器已清理，无宿主端口发布。结果属于 GitHub 临时环境，不宣称新增独立公网、NAT 切网或浏览器远控人工证据。
-- server-fork 日志确认 25 项库测试、0 失败，含 `periodic_registration_does_not_extend_rate_window`；这是固定补丁检查，不代替独立 fork 新提交与维护 CI。独立 fork 仅只读核对并发出范围确认，未修改或推送。
+- server-fork 日志确认 25 项库测试、0 失败，含 `periodic_registration_does_not_extend_rate_window`；这是固定补丁检查。用户随后授权独立 fork 维护，修复及回归已提交 `2815a803736bdedc9a603d09f86ed3145cdf8d22`，推送本人 `RyanWee68/rustdesk-server-controlled` 的 `codex/controlled-admission`；[维护 CI 39400428821](https://github.com/RyanWee68/rustdesk-server-controlled/actions/runs/39400428821) 精确检查该 SHA，最终 success，固定子模块核对、Linux hbbs/hbbr 编译与库回归均成功。日志北京时间 17:37:50 确认窗口回归通过，17:37:52 确认 25 passed、0 failed；这是独立 fork 的单独维护证据，维护同步待办关闭。本轮不合并 main、不部署或发布镜像。
 - Linux 工具回归日志两端 SHA256 `2feb028174b75ebc544470c5e9721f19a11de729843412aff3b0d4d7848b2219` 一致，私有临时源码及夹具已清理。独立正式服务保持不动，临时密码问题暂缓，浏览器缺包略过。
 
 ## 2026-10-20 Linux 权限回归与源码提交准备

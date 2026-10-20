@@ -19,7 +19,7 @@
 - 已按授权提交 `145768f6740cabbb68678bbdcdfb02f68cb2c877` 并推送到 `RyanWee68/rustdesk-api-server-pro` 的 `codex/release-followup`，仅包含本对话 25 个受控服务文件；并行前端、两个本地验收 JSON 及 `.omx/` 保持原样未提交。不向 upstream 推送、不发布镜像，未合并 main 或更新业务服务。
 - 本次 [39394386028](https://github.com/RyanWee68/rustdesk-api-server-pro/actions/runs/39394386028) 精确检查该提交，最终为 success，Rust 模板、acceptance、server-fork、real-three-containers 四个作业全部成功。后端完整测试/构建/静态检查、Linux CGO 中继服务及 HTTP 入口 `-race` 五轮、前端类型/构建、综合验收、Compose 回归及临时 API 准入均通过。
 - 真实镜像构建、前端增量镜像契约、基础/TLS/WSS 最终 Compose 预检及三容器协议/故障/持久化通过。日志确认真实 hbbs 签发、逐端核销和重放拒绝、WSS 双向二进制传输及 API 故障/恢复；均在 GitHub 临时环境执行，不发布宿主端口或镜像，不替代独立外网/切网或浏览器远控验收。源码维护及本轮 API 仓库远程 CI 已完成，后续验收记录提交仅改文档、不将其另记为新的代码运行结果。
-- server-fork 日志确认固定官方基线补丁重放后的库测试 25/25，包括限流窗口回归；不等于独立 server fork 维护分支已同步。只读发现相邻独立 fork 仍有一个 `src/rendezvous_server.rs` 限流修复未提交，已单独询问是否一并维护，未擅自改动或推送该仓库。
+- server-fork 日志确认固定官方基线补丁重放后的库测试 25/25，包括限流窗口回归。用户随后单独授权维护独立 fork：限流修复及同文件回归已提交为 `2815a803736bdedc9a603d09f86ed3145cdf8d22`，仅推送到 `RyanWee68/rustdesk-server-controlled` 的 `codex/controlled-admission`，工作区干净；[维护 CI 39400428821](https://github.com/RyanWee68/rustdesk-server-controlled/actions/runs/39400428821) 精确检查该提交，最终 success，固定子模块、Linux hbbs/hbbr 编译及 25/25 库测试全部通过。北京时间 17:37:50 日志确认限流窗口回归通过，17:37:52 确认 0 失败，独立 fork 维护同步待办已关闭。不向官方 upstream 推送，不更新现用服务。
 - Linux 工具自测私有副本已精确清理，工作目录确认无夹具残留，取回日志 SHA256 `2feb028174b75ebc544470c5e9721f19a11de729843412aff3b0d4d7848b2219` 两端一致。官方客户端保留、临时密码问题暂缓，独立正式服务不动、浏览器缺包略过。
 
 ### 2026-10-20 16:27 源码维护收尾与 Linux 工具回归
@@ -1474,7 +1474,6 @@ scripts/deploy/controlled-admission-smoke.sh
 
 | 剩余工作 | 所需条件及完成判定 |
 | --- | --- |
-| 独立 server fork 维护同步（待范围确认） | API 仓库 `145768f` 已提交推送，本次四作业 CI、Linux 数据竞争五轮及固定补丁 25 项 Rust 库测试通过。相邻独立 server fork 仍有一个限流修复源码文件未提交，已询问是否一并提交推送并运行其维护 CI；未修改或推送该仓库，不将补丁检查冒充其新提交已完成 |
 | 浏览器完整远控（本轮略过） | 原生 WSS 服务端及家庭独立外网真实授权会话已通过；仍缺合法官方 Web 发行包，不采购、不获取第三方资源，不以协议探针当作浏览器完整远控 |
 | NAT/代理换出口及恢复（当前暂缓） | 用户确认目前无法切换网络；操作/审计矩阵已准备，待有可切换网络时补 A 基线、B 换出口、C 返回原网的实际连接、重新授权与恢复证据，不据普通远控或公网探针关闭此项 |
 | 真实外部认证 | 需要用户实际使用的 IdP 配置与账号，在部署后的 HTTPS 环境完成登录、回调、退出和撤销联调；模拟 Provider 测试和旧 YAML 迁移不能替代 |
