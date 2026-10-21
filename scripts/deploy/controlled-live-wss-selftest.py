@@ -2,6 +2,9 @@
 """使用内存数据库验证现用 WSS 夹具的清理边界，不访问目标主机。"""
 
 import base64
+import contextlib
+from datetime import datetime, timedelta, timezone
+import io
 import json
 from contextlib import closing
 from importlib import import_module
@@ -82,6 +85,75 @@ INSERT INTO operation_audit VALUES('987654321','allow');
             live.delete_rows(self.db, self.m)
         self.assertEqual(self.db.execute("SELECT count(*) FROM user").fetchone(), (2,))
         self.assertEqual(self.db.execute("SELECT count(*) FROM auth_token").fetchone(), (4,))
+
+    def test_external_window_has_time_for_manual_acceptance(self):
+        """人工窗口为 45 分钟，配置提前一分钟失效且保护失败不创建身份。"""
+        for timer_state in (b"active", b"inactive"):
+            with self.subTest(timer=timer_state), tempfile.TemporaryDirectory(prefix="controlled-wss-window-") as directory:
+                root = Path(directory).resolve()
+                (root / "data/tls").mkdir(parents=True)
+                (root / "backups").mkdir()
+                keys = root / "keys"
+                keys.mkdir()
+                (keys / "id_ed25519.pub").write_text(base64.b64encode(bytes(32)).decode())
+                (root / "data/tls/rustdesk.jtzxsoft.com.fullchain.pem").write_text("fixture")
+                for name in ("compose.yaml", "runtime.env"):
+                    (root / name).write_text("fixture")
+                with closing(sqlite3.connect(root / "data/server.db")) as db:
+                    db.executescript("""
+CREATE TABLE user(id INTEGER PRIMARY KEY,username TEXT,password TEXT,status INTEGER,is_admin INTEGER,allow_remote_access INTEGER,allow_relay INTEGER);
+CREATE TABLE device(rustdesk_id TEXT,user_id INTEGER,uuid TEXT,fingerprint TEXT,approval_status TEXT,disabled INTEGER,allow_relay INTEGER);
+CREATE TABLE auth_token(user_id INTEGER,rustdesk_id TEXT,uuid TEXT,token TEXT,token_hash TEXT,expired TEXT,is_admin INTEGER,status INTEGER);
+CREATE TABLE operation_audit(id INTEGER PRIMARY KEY);
+""")
+                with closing(sqlite3.connect(keys / "db_v2.sqlite3")) as db:
+                    db.execute("CREATE TABLE peer(id TEXT)")
+                infos = {}
+                for name in ("rustdesk-api-server-pro", "rustdesk-hbbs-controlled", "rustdesk-hbbr-controlled"):
+                    infos[name] = {"Id": name, "State": {"Running": True, "Health": {"Status": "healthy"}, "StartedAt": "fixture"},
+                                   "Config": {"Labels": {"com.docker.compose.project": "fixture"}},
+                                   "NetworkSettings": {"Networks": {"fixture_rustdesk-control": {}}}, "Mounts": []}
+                infos["rustdesk-api-server-pro"]["Mounts"] = [{"Destination": "/app/data", "Source": str(root / "data")}]
+                infos["rustdesk-hbbs-controlled"]["Mounts"] = [{"Destination": "/data", "Source": str(keys), "Type": "volume"}]
+
+                def command(*args):
+                    """仅模拟本轮准备阶段允许调用的 Docker 查询与保护定时器。"""
+                    if args[:2] == ("docker", "inspect"):
+                        return json.dumps([infos[args[2]]]).encode()
+                    if args[0] == "systemd-run":
+                        self.assertIn("--on-active=45m", args)
+                        return b""
+                    if args[:2] == ("systemctl", "is-active"):
+                        return timer_state
+                    self.fail("出现预期外命令")
+
+                before = datetime.now(timezone.utc)
+                with patch.object(live.os, "geteuid", return_value=0, create=True), \
+                        patch.object(live, "ZoneInfo", side_effect={"Asia/Shanghai": timezone(timedelta(hours=8)), "UTC": timezone.utc}.__getitem__), \
+                        patch.object(live, "command", side_effect=command), \
+                        patch.object(live.wss, "public_acceptance") as public, \
+                        patch.object(live, "cleanup") as cleanup, contextlib.redirect_stdout(io.StringIO()):
+                    if timer_state == b"active":
+                        live.run(root, external=True)
+                    else:
+                        with self.assertRaisesRegex(RuntimeError, "ERR-239D"):
+                            live.run(root, external=True)
+                    public.assert_called_once()
+                    cleanup.assert_not_called()
+                after = datetime.now(timezone.utc)
+                backup, = (root / "backups").iterdir()
+                with closing(sqlite3.connect(root / "data/server.db")) as db:
+                    self.assertEqual(db.execute("SELECT count(*) FROM user").fetchone()[0], 1 if timer_state == b"active" else 0)
+                    self.assertEqual(db.execute("SELECT count(*) FROM auth_token").fetchone()[0], 2 if timer_state == b"active" else 0)
+                if timer_state == b"inactive":
+                    self.assertFalse((backup / "source.json").exists())
+                    continue
+                configs = [json.loads((backup / name).read_text()) for name in ("source.json", "target.json", "external-window.json")]
+                expires = datetime.fromisoformat(configs[0]["expires_utc"])
+                self.assertGreaterEqual(expires, before + timedelta(minutes=44))
+                self.assertLessEqual(expires, after + timedelta(minutes=44))
+                self.assertTrue(all(config["expires_utc"] == configs[0]["expires_utc"] for config in configs))
+                self.assertEqual([config["role"] for config in configs[:2]], ["source", "target"])
 
     def test_probe_process_is_reaped_on_failure(self):
         """成功不误杀，超时和通信异常均回收仍运行的子进程。"""

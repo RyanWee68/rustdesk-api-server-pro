@@ -223,7 +223,7 @@ def run(root, external=False):
         backup_database(source, backup / name)
     (backup / "fixture.json").write_text(json.dumps(m))
     unit = "controlled-wss-live-cleanup-" + run_id
-    minutes = 20 if external else 10
+    minutes = 45 if external else 10
     command("systemd-run", "--unit=" + unit, "--on-active=" + str(minutes) + "m", "--timer-property=AccuracySec=1s",
             "--property=Type=oneshot", sys.executable, "-B", str(Path(__file__).resolve()), "--cleanup", str(backup))
     require(command("systemctl", "is-active", unit + ".timer").strip() == b"active", "自动清理未启用")
@@ -253,7 +253,7 @@ def run(root, external=False):
             (backup / "external-window.json").write_text(json.dumps({"expires_utc": expires, "containers": baseline,
                 "audit_start": db.execute("SELECT coalesce(max(id),0) FROM operation_audit").fetchone()[0]}))
             awaiting_external = True
-            print("外网窗口已准备，两个角色配置仅在 root 私有目录；十九分钟操作期，二十分钟自动清理。", flush=True)
+            print("外网窗口已准备，两个角色配置仅在 root 私有目录；44 分钟操作期，45 分钟自动清理；配置到期 UTC：" + expires, flush=True)
             return
         command("docker", "run", "-d", "--rm", "--pull=never", "--name", m["peer"],
                 "--label", "controlled.wss.run=" + run_id, "--network", network, "alpine:3.20.3", "sleep", "600")

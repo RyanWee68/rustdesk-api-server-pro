@@ -110,12 +110,15 @@ public static class ControlledWssProbe {
         }
     }
     /// <summary>禁止过期后继续申请或核销会话。</summary>
-    static void Alive(DateTime expires) { Need(DateTime.UtcNow < expires,"测试窗口已过期，请申请新窗口"); }
+    static void Alive(DateTime expires) {
+        Need(DateTime.UtcNow < expires,"测试窗口已过期，请申请新窗口");
+        Need(expires <= DateTime.UtcNow.AddMinutes(45),"测试有效期无效");
+    }
     /// <summary>执行源端或目标端的三次授权数据往返与重放探针。</summary>
     public static string[] Run(string role, string target, string key, string credential, DateTime expires) {
         Need(role == "source" || role == "target", "测试角色无效");
         Need(System.Text.RegularExpressions.Regex.IsMatch(target,@"^[1-9][0-9]{8}$"),"目标编号无效");
-        Need(expires > DateTime.UtcNow && expires <= DateTime.UtcNow.AddMinutes(20),"测试有效期无效");
+        Alive(expires);
         var sessions = new List<string>();
         if (role == "source") {
             Need(Convert.FromBase64String(key).Length == 32 && System.Text.RegularExpressions.Regex.IsMatch(credential,@"^[A-Za-z0-9_-]{64}$"),"测试凭据格式无效");
@@ -180,6 +183,8 @@ public static class ControlledWssProbe {
         }
         using (var w = DirectSocket()) Need(w.Options.Proxy == null && w.State == WebSocketState.None,"直连 WSS 配置错误");
         bool expired=false; try{Alive(DateTime.UtcNow.AddSeconds(-1));}catch{expired=true;} Need(expired,"过期窗口未拒绝");
+        foreach (int minutes in new int[]{30,44}) Alive(DateTime.UtcNow.AddMinutes(minutes));
+        bool excessive=false; try{Alive(DateTime.UtcNow.AddMinutes(46));}catch{excessive=true;} Need(excessive,"超长窗口未拒绝");
         Need(Hash(new byte[]{1}).Length==32,"随机消息摘要错误");
     }
 }
