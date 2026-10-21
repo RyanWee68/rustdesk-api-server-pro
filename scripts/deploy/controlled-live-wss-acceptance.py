@@ -224,6 +224,7 @@ def run(root, external=False):
     (backup / "fixture.json").write_text(json.dumps(m))
     unit = "controlled-wss-live-cleanup-" + run_id
     minutes = 45 if external else 10
+    window_started = datetime.now(ZoneInfo("UTC"))
     command("systemd-run", "--unit=" + unit, "--on-active=" + str(minutes) + "m", "--timer-property=AccuracySec=1s",
             "--property=Type=oneshot", sys.executable, "-B", str(Path(__file__).resolve()), "--cleanup", str(backup))
     require(command("systemctl", "is-active", unit + ".timer").strip() == b"active", "自动清理未启用")
@@ -234,7 +235,7 @@ def run(root, external=False):
     db = sqlite3.connect(root / "data/server.db", timeout=10)
     awaiting_external = False
     try:
-        expiry = (datetime.now(ZoneInfo("Asia/Shanghai")) + timedelta(minutes=minutes)).strftime("%Y-%m-%d %H:%M:%S")
+        expiry = (window_started + timedelta(minutes=minutes)).astimezone(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M:%S")
         with db:
             require(db.execute("SELECT count(*) FROM device WHERE rustdesk_id IN (?,?)", (m["source"], m["target"])).fetchone()[0] == 0,
                     "随机测试编号冲突，未修改设备")
@@ -246,7 +247,10 @@ def run(root, external=False):
                 db.execute("INSERT INTO auth_token (user_id,rustdesk_id,uuid,token,token_hash,expired,is_admin,status) VALUES (?,?,?,'',?,?,0,1)",
                            (uid, ident, device_uuid, hashlib.sha256(token.encode()).hexdigest(), expiry))
         if external:
-            expires = (datetime.now(ZoneInfo("UTC")) + timedelta(minutes=minutes-1)).isoformat()
+            expires_at = window_started + timedelta(minutes=minutes-1)
+            require(expires_at - datetime.now(ZoneInfo("UTC")) >= timedelta(minutes=30),
+                    "准备耗时过长，剩余操作期不足三十分钟，须清理后重开窗口")
+            expires = expires_at.isoformat()
             common = {"run": run_id, "target": m["target"], "expires_utc": expires}
             (backup / "source.json").write_text(json.dumps({**common, "role": "source", "public_key": base64.b64encode(public_key).decode(), "token": tokens[0]}))
             (backup / "target.json").write_text(json.dumps({**common, "role": "target", "device_uuid": m["device_uuid"], "fingerprint": base64.b64encode(fingerprint).decode()}))

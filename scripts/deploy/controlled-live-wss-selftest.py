@@ -87,9 +87,9 @@ INSERT INTO operation_audit VALUES('987654321','allow');
         self.assertEqual(self.db.execute("SELECT count(*) FROM auth_token").fetchone(), (4,))
 
     def test_external_window_has_time_for_manual_acceptance(self):
-        """人工窗口为 45 分钟，配置提前一分钟失效且保护失败不创建身份。"""
-        for timer_state in (b"active", b"inactive"):
-            with self.subTest(timer=timer_state), tempfile.TemporaryDirectory(prefix="controlled-wss-window-") as directory:
+        """期限固定在保护启动前，至少留三十分钟，否则清理且不交付配置。"""
+        for timer_state, delay_minutes in ((b"active", 0), (b"inactive", 0), (b"active", 2), (b"active", 14), (b"active", 15)):
+            with self.subTest(timer=timer_state, delay=delay_minutes), tempfile.TemporaryDirectory(prefix="controlled-wss-window-") as directory:
                 root = Path(directory).resolve()
                 (root / "data/tls").mkdir(parents=True)
                 (root / "backups").mkdir()
@@ -116,42 +116,57 @@ CREATE TABLE operation_audit(id INTEGER PRIMARY KEY);
                 infos["rustdesk-api-server-pro"]["Mounts"] = [{"Destination": "/app/data", "Source": str(root / "data")}]
                 infos["rustdesk-hbbs-controlled"]["Mounts"] = [{"Destination": "/data", "Source": str(keys), "Type": "volume"}]
 
+                started = datetime.now(timezone.utc)
+                elapsed = timedelta()
+
                 def command(*args):
                     """仅模拟本轮准备阶段允许调用的 Docker 查询与保护定时器。"""
+                    nonlocal elapsed
                     if args[:2] == ("docker", "inspect"):
                         return json.dumps([infos[args[2]]]).encode()
                     if args[0] == "systemd-run":
                         self.assertIn("--on-active=45m", args)
+                        elapsed = timedelta(minutes=delay_minutes)
                         return b""
                     if args[:2] == ("systemctl", "is-active"):
                         return timer_state
+                    if args[:2] == ("systemctl", "stop"):
+                        self.assertEqual(delay_minutes, 15)
+                        cleanup.assert_called_once()
+                        return b""
                     self.fail("出现预期外命令")
 
-                before = datetime.now(timezone.utc)
                 with patch.object(live.os, "geteuid", return_value=0, create=True), \
                         patch.object(live, "ZoneInfo", side_effect={"Asia/Shanghai": timezone(timedelta(hours=8)), "UTC": timezone.utc}.__getitem__), \
+                        patch.object(live, "datetime", wraps=datetime) as clock, \
                         patch.object(live, "command", side_effect=command), \
                         patch.object(live.wss, "public_acceptance") as public, \
                         patch.object(live, "cleanup") as cleanup, contextlib.redirect_stdout(io.StringIO()):
-                    if timer_state == b"active":
+                    clock.now.side_effect = lambda zone: (started + elapsed).astimezone(zone)
+                    if timer_state == b"active" and delay_minutes < 15:
                         live.run(root, external=True)
                     else:
                         with self.assertRaisesRegex(RuntimeError, "ERR-239D"):
                             live.run(root, external=True)
                     public.assert_called_once()
-                    cleanup.assert_not_called()
-                after = datetime.now(timezone.utc)
+                    if delay_minutes == 15:
+                        cleanup.assert_called_once()
+                    else:
+                        cleanup.assert_not_called()
                 backup, = (root / "backups").iterdir()
                 with closing(sqlite3.connect(root / "data/server.db")) as db:
                     self.assertEqual(db.execute("SELECT count(*) FROM user").fetchone()[0], 1 if timer_state == b"active" else 0)
                     self.assertEqual(db.execute("SELECT count(*) FROM auth_token").fetchone()[0], 2 if timer_state == b"active" else 0)
-                if timer_state == b"inactive":
+                if timer_state == b"inactive" or delay_minutes == 15:
                     self.assertFalse((backup / "source.json").exists())
                     continue
                 configs = [json.loads((backup / name).read_text()) for name in ("source.json", "target.json", "external-window.json")]
                 expires = datetime.fromisoformat(configs[0]["expires_utc"])
-                self.assertGreaterEqual(expires, before + timedelta(minutes=44))
-                self.assertLessEqual(expires, after + timedelta(minutes=44))
+                self.assertEqual(expires, started + timedelta(minutes=44))
+                with closing(sqlite3.connect(root / "data/server.db")) as db:
+                    expiries = db.execute("SELECT expired FROM auth_token").fetchall()
+                expected_expiry = (started + timedelta(minutes=45, hours=8)).strftime("%Y-%m-%d %H:%M:%S")
+                self.assertEqual(expiries, [(expected_expiry,), (expected_expiry,)])
                 self.assertTrue(all(config["expires_utc"] == configs[0]["expires_utc"] for config in configs))
                 self.assertEqual([config["role"] for config in configs[:2]], ["source", "target"])
 
