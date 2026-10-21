@@ -10,6 +10,7 @@ import (
 	"rustdesk-api-server-pro/internal/core"
 	"rustdesk-api-server-pro/internal/errcode"
 	v2service "rustdesk-api-server-pro/internal/service"
+	"rustdesk-api-server-pro/util"
 
 	"github.com/kataras/iris/v12"
 	"github.com/kataras/iris/v12/mvc"
@@ -45,6 +46,7 @@ func (c *RustdeskController) PostRelayGrantIssue() mvc.Result {
 	return c.resultWithAudit("rustdesk_internal_relay_grant_issue", strings.TrimSpace(req.TargetID), iris.Map{
 		"target_id": strings.TrimSpace(req.TargetID), "source_ip": req.SourceIP,
 		"target_ip": req.TargetIP, "has_token": strings.TrimSpace(req.AccessToken) != "",
+		"session_sha256": util.Sha256Hex(strings.TrimSpace(req.SessionUUID)),
 	}, resp, err)
 }
 
@@ -60,6 +62,7 @@ func (c *RustdeskController) PostRelayGrantConsume() mvc.Result {
 	resp, err := c.service().ConsumeRelayGrant(c.Ctx.Request().Context(), req)
 	return c.resultWithAudit("rustdesk_internal_relay_grant_consume", resp.DeviceID, iris.Map{
 		"peer_ip": req.PeerIP, "has_session_uuid": strings.TrimSpace(req.SessionUUID) != "",
+		"session_sha256": util.Sha256Hex(strings.TrimSpace(req.SessionUUID)),
 	}, resp, err)
 }
 

@@ -151,11 +151,24 @@ def external_evidence(db, m, audit_start):
         require(sum(row[0] == action and row[1] == "allow" for row in audits) == minimum, "签发或核销允许审计不完整")
     denied = db.execute("SELECT before_data FROM operation_audit WHERE id>? AND resource_type='rustdesk_admission' AND action='rustdesk_internal_relay_grant_consume' AND result='deny' AND error_message='ERR-2315'",
                         (audit_start,)).fetchall()
-    for peer in (source, target):
-        require(sum(normalized(json.loads(row[0])["peer_ip"]) == normalized(peer) for row in denied) >= 3, "缺少双端各三次重放拒绝审计")
+    allowed = [(row[0], json.loads(row[3])) for row in audits if row[1] == "allow"]
+    replays = [json.loads(row[0]) for row in denied]
+    for session, source_ip, target_ip, _, _ in rows:
+        digest = hashlib.sha256(session.encode()).hexdigest()
+        issued = [data for action, data in allowed if action == "rustdesk_internal_relay_grant_issue"
+                  and data.get("session_sha256") == digest]
+        require(len(issued) == 1 and normalized(issued[0]["source_ip"]) == normalized(source_ip)
+                and normalized(issued[0]["target_ip"]) == normalized(target_ip), "缺少本会话双来源签发审计")
+        for peer in (source_ip, target_ip):
+            require(sum(action == "rustdesk_internal_relay_grant_consume" and data.get("session_sha256") == digest
+                        and normalized(data["peer_ip"]) == normalized(peer) for action, data in allowed) == 1,
+                    "缺少本会话逐端核销审计")
+            require(any(data.get("session_sha256") == digest and normalized(data["peer_ip"]) == normalized(peer)
+                        for data in replays), "缺少本会话逐端重放拒绝审计，请勿沿用旧版无摘要审计")
     return {"sessions": [row[0] for row in rows], "source_ip": source, "target_ip": target,
             "source_global": ipaddress.ip_address(source).is_global, "target_global": ipaddress.ip_address(target).is_global,
             "consumed": [1, 1], "issued": 3, "replays_rejected_minimum": 6,
+            "audit_session_sha256": True,
             "external_network_human_confirmation": False, "browser_remote_desktop": False}
 
 

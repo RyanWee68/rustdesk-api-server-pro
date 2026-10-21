@@ -159,10 +159,10 @@ func TestRustdeskRelayGrantRoute(t *testing.T) {
 		return out.Code, resp
 	}
 	issue := core.RustdeskRelayGrantIssueRequest{
-		TargetID: "target", AccessToken: token, SessionUUID: sessionUUID,
+		TargetID: "target", AccessToken: token, SessionUUID: " " + sessionUUID + " ",
 		SourceIP: "192.0.2.10", TargetIP: "198.51.100.20",
 	}
-	consume := core.RustdeskRelayGrantConsumeRequest{SessionUUID: sessionUUID, PeerIP: issue.SourceIP}
+	consume := core.RustdeskRelayGrantConsumeRequest{SessionUUID: " " + sessionUUID + " ", PeerIP: issue.SourceIP}
 	if status, resp := post("/internal/rustdesk/relay/grant/issue", issue, false); status != http.StatusUnauthorized || resp.Allow {
 		t.Fatalf("签发接口未受保护：%d %+v", status, resp)
 	}
@@ -206,14 +206,26 @@ func TestRustdeskRelayGrantRoute(t *testing.T) {
 	if status, resp := post("/internal/rustdesk/relay/grant/consume", consume, true); status != http.StatusOK || !resp.Allow {
 		t.Fatalf("核销失败：%d %+v", status, resp)
 	}
+	if status, resp := post("/internal/rustdesk/relay/grant/consume", consume, true); status != http.StatusOK || resp.Allow || resp.Code != "ERR-2315" {
+		t.Fatalf("ERR-2398 重放未拒绝：%d %+v", status, resp)
+	}
 	var audits []model.OperationAudit
 	if err := db.Where("action = ? or action = ?", "rustdesk_internal_relay_grant_issue", "rustdesk_internal_relay_grant_consume").Find(&audits); err != nil {
 		t.Fatal(err)
 	}
-	if len(audits) != 4 {
+	if len(audits) != 5 {
 		t.Fatalf("审计数量错误：%d", len(audits))
 	}
 	for _, audit := range audits {
+		var request struct {
+			SessionSHA256 string `json:"session_sha256"`
+		}
+		if err := json.Unmarshal([]byte(audit.BeforeData), &request); err != nil {
+			t.Fatal(err)
+		}
+		if request.SessionSHA256 != util.Sha256Hex(sessionUUID) {
+			t.Fatal("ERR-2398 签发、核销或拒绝审计缺少一致的会话摘要")
+		}
 		if strings.Contains(audit.BeforeData+audit.AfterData, token) || strings.Contains(audit.BeforeData+audit.AfterData, sessionUUID) {
 			t.Fatal("中继审计泄漏凭据或会话 UUID")
 		}

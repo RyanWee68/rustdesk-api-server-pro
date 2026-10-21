@@ -4,6 +4,7 @@
 import base64
 import contextlib
 from datetime import datetime, timedelta, timezone
+import hashlib
 import io
 import json
 from contextlib import closing
@@ -310,15 +311,23 @@ DELETE FROM rustdesk_relay_grant;
 """)
         with self.db:
             for index in range(3):
+                session_hash = hashlib.sha256(str(index).encode()).hexdigest()
                 self.db.execute("INSERT INTO rustdesk_relay_grant VALUES(?,?,?,?,?,1,1)",
                                 (self.m["source"], self.m["target"], str(index), "203.0.113.1", "198.51.100.2"))
                 for action, count in (("rustdesk_internal_relay_grant_issue", 1), ("rustdesk_internal_relay_grant_consume", 2)):
-                    for _ in range(count):
-                        self.db.execute("INSERT INTO operation_audit VALUES(?,'allow',1,?,'rustdesk_admission','','{}')", (self.m["target"], action))
+                    for role in range(count):
+                        request = {"session_sha256": session_hash, "source_ip": "203.0.113.1", "target_ip": "198.51.100.2",
+                                   "peer_ip": "203.0.113.1" if role == 0 else "198.51.100.2"}
+                        self.db.execute("INSERT INTO operation_audit VALUES(?,'allow',1,?,'rustdesk_admission','',?)",
+                                        (self.m["target"], action, json.dumps(request)))
                 for peer in ("203.0.113.1", "198.51.100.2"):
-                    self.db.execute("INSERT INTO operation_audit VALUES('','deny',1,'rustdesk_internal_relay_grant_consume','rustdesk_admission','ERR-2315',?)", (json.dumps({"peer_ip": "::ffff:" + peer if peer == "203.0.113.1" else peer}),))
+                    self.db.execute("INSERT INTO operation_audit VALUES('','deny',1,'rustdesk_internal_relay_grant_consume','rustdesk_admission','ERR-2315',?)",
+                                    (json.dumps({"session_sha256": session_hash, "peer_ip": "::ffff:" + peer if peer == "203.0.113.1" else peer}),))
+            self.db.execute("INSERT INTO operation_audit VALUES('','deny',1,'rustdesk_internal_relay_grant_consume','rustdesk_admission','ERR-2315',?)",
+                            (json.dumps({"session_sha256": "f" * 64, "peer_ip": "unrelated-invalid-ip"}),))
         result = live.external_evidence(self.db, self.m, 0)
         self.assertFalse(result["external_network_human_confirmation"])
+        self.assertTrue(result["audit_session_sha256"])
         self.assertEqual(len(result["sessions"]), 3)
         for sql in ("UPDATE rustdesk_relay_grant SET target_used=0", "UPDATE rustdesk_relay_grant SET target_ip=source_ip",
                     "DELETE FROM operation_audit WHERE result='deny'", "DELETE FROM operation_audit WHERE action='rustdesk_internal_relay_grant_issue'"):
@@ -329,6 +338,23 @@ DELETE FROM rustdesk_relay_grant;
                     live.external_evidence(self.db, self.m, 0)
                 self.db.execute("ROLLBACK TO failure")
                 self.db.execute("RELEASE failure")
+        for label, clause, payload in (
+                ("缺少摘要", "1=1", {}),
+                ("其他会话拒绝", "result='deny'", {"session_sha256": "f" * 64}),
+                ("拒绝集中到单个会话", "result='deny'", {"session_sha256": hashlib.sha256(b"0").hexdigest()}),
+                ("签发集中到单个会话", "action='rustdesk_internal_relay_grant_issue'", {"session_sha256": hashlib.sha256(b"0").hexdigest()}),
+                ("签发来源不匹配", "action='rustdesk_internal_relay_grant_issue'", {"source_ip": "203.0.113.9"}),
+                ("核销只有同一端", "result='allow' AND action='rustdesk_internal_relay_grant_consume'", {"peer_ip": "203.0.113.1"})):
+            with self.subTest(label=label):
+                self.db.execute("SAVEPOINT correlation")
+                for rowid, data in self.db.execute("SELECT rowid,before_data FROM operation_audit WHERE " + clause).fetchall():
+                    request = json.loads(data or "{}")
+                    request = {**request, **payload} if payload else {k: v for k, v in request.items() if k != "session_sha256"}
+                    self.db.execute("UPDATE operation_audit SET before_data=? WHERE rowid=?", (json.dumps(request), rowid))
+                with self.assertRaisesRegex(RuntimeError, "ERR-239D"):
+                    live.external_evidence(self.db, self.m, 0)
+                self.db.execute("ROLLBACK TO correlation")
+                self.db.execute("RELEASE correlation")
 
 
 if __name__ == "__main__":
